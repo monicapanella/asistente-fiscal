@@ -14,25 +14,34 @@ export default function ResetPasswordPage() {
   const supabase = createClient()
 
   useEffect(() => {
-    async function exchangeCode() {
-      const params = new URLSearchParams(window.location.search)
-      const code = params.get('code')
-      if (code) {
-        const { error } = await supabase.auth.exchangeCodeForSession(code)
+    async function processToken() {
+      // Leer el hash de la URL: #access_token=...&type=recovery
+      const hash = window.location.hash.substring(1)
+      const params = new URLSearchParams(hash)
+      const accessToken = params.get('access_token')
+      const type = params.get('type')
+
+      if (accessToken && type === 'recovery') {
+        const { error } = await supabase.auth.setSession({
+          access_token: accessToken,
+          refresh_token: params.get('refresh_token') || ''
+        })
         if (error) {
           setError('El enlace ha caducado o no es válido. Solicita uno nuevo.')
         } else {
           setReady(true)
         }
       } else {
-        supabase.auth.onAuthStateChange((event) => {
+        // Fallback: esperar evento PASSWORD_RECOVERY
+        const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
           if (event === 'PASSWORD_RECOVERY') {
             setReady(true)
           }
         })
+        return () => subscription.unsubscribe()
       }
     }
-    exchangeCode()
+    processToken()
   }, [supabase])
 
   async function handleReset() {
