@@ -48,7 +48,36 @@ export default function AsistentePage() {
   async function handleCopy(content: string, index: number) {
     const element = messageRefs.current[index]
     if (element) {
-      const inner = element.innerHTML
+      // ── Word-compatibility post-processing ───────────────────────────────
+      // 1. element.innerHTML serialises React hex colours as rgb() values,
+      //    which Word handles inconsistently.
+      // 2. Word has a long-standing bug: with border-collapse:collapse it
+      //    drops the background of the *last* <th> in a row while collapsing
+      //    the right border.
+      // 3. Word ignores <style> blocks from clipboard HTML; only inline styles
+      //    and the legacy `bgcolor` HTML attribute are applied reliably.
+      //
+      // Fix: rewrite every <th> and <thead> with explicit hex inline-style
+      // AND the legacy bgcolor attribute that Word has always honoured.
+      // ─────────────────────────────────────────────────────────────────────
+      let inner = element.innerHTML
+
+      // Replace <thead ...> — strip any existing style/bgcolor, re-apply clean
+      inner = inner.replace(/<thead\b([^>]*)>/gi, (_m, attrs) => {
+        const clean = attrs
+          .replace(/\s*style="[^"]*"/gi, '')
+          .replace(/\s*bgcolor="[^"]*"/gi, '')
+        return `<thead${clean} bgcolor="#264b6e" style="background-color:#264b6e">`
+      })
+
+      // Replace every <th ...> — same strategy
+      inner = inner.replace(/<th\b([^>]*)>/gi, (_m, attrs) => {
+        const clean = attrs
+          .replace(/\s*style="[^"]*"/gi, '')
+          .replace(/\s*bgcolor="[^"]*"/gi, '')
+        return `<th${clean} bgcolor="#264b6e" style="background-color:#264b6e;color:white;padding:8px 12px;text-align:left;font-weight:bold;font-size:12px">`
+      })
+
       const html = `<html><head><meta charset="UTF-8"><style>
 body{font-family:Lato,Arial,sans-serif;font-size:13px;color:#1a2a3a}
 table{border-collapse:collapse;width:100%}
