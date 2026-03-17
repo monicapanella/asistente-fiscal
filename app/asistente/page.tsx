@@ -154,7 +154,7 @@ export default function AsistentePage() {
                       <thead style={{ background: '#264b6e', color: 'white' }}>{children}</thead>
                     ),
                     th: ({children}) => (
-                      <th style={{ padding: '8px 12px', textAlign: 'left', fontWeight: 700, fontSize: 12, letterSpacing: 0.5 }}>
+                      <th style={{ padding: '8px 12px', textAlign: 'left', fontWeight: 700, fontSize: 12, letterSpacing: 0.5, color: 'white', background: '#264b6e' }}>
                         {children}
                       </th>
                     ),
