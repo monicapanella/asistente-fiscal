@@ -20,8 +20,8 @@ function inlineMarkdown(text: string): string {
       .replace(/&/g, '&amp;')
       .replace(/</g, '&lt;')
       .replace(/>/g, '&gt;')
-      .replace(/\*\*(.*?)\*\*/gs, '<strong style="font-weight:bold;color:#264b6e">$1</strong>')
-      .replace(/\*(.*?)\*/gs, '<em>$1</em>')
+      .replace(/\*\*(.*?)\*\*/g, '<strong style="font-weight:bold;color:#264b6e">$1</strong>')
+      .replace(/\*(.*?)\*/g, '<em>$1</em>')
       .replace(/`(.*?)`/g, '<code style="background:#f0f4f8;padding:2px 6px;border-radius:4px;font-size:12px">$1</code>')
   }).join('')
 }
