@@ -7,6 +7,123 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import rehypeRaw from 'rehype-raw'
 
+// ── Word HTML generator ────────────────────────────────────────────────────
+// Converts markdown directly to Word-compatible HTML WITHOUT going through
+// the DOM. This avoids the browser normalising hex colours to rgb() in
+// element.innerHTML, which caused Word to drop the last-column background.
+function inlineMarkdown(text: string): string {
+  // Split on <br> tags inserted by fixTableMarkdown so we don't escape them
+  const parts = text.split(/(<br\s*\/?>)/gi)
+  return parts.map((part, idx) => {
+    if (idx % 2 === 1) return part // preserve <br>
+    return part
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/\*\*(.*?)\*\*/gs, '<strong style="font-weight:bold;color:#264b6e">$1</strong>')
+      .replace(/\*(.*?)\*/gs, '<em>$1</em>')
+      .replace(/`(.*?)`/g, '<code style="background:#f0f4f8;padding:2px 6px;border-radius:4px;font-size:12px">$1</code>')
+  }).join('')
+}
+
+function buildWordHtml(markdown: string): string {
+  const fixed = fixTableMarkdown(markdown)
+  const lines = fixed.split('\n')
+  let html = ''
+  let i = 0
+
+  while (i < lines.length) {
+    const line = lines[i]
+    const trimmed = line.trim()
+
+    // ── Table ──────────────────────────────────────────────────────────────
+    if (trimmed.startsWith('|')) {
+      const tableLines: string[] = []
+      while (i < lines.length && lines[i].trim().startsWith('|')) {
+        tableLines.push(lines[i])
+        i++
+      }
+      const parseRow = (row: string): string[] =>
+        row.split('|').slice(1, -1).map(c => c.trim())
+      const isSep = (row: string): boolean =>
+        /^\|[\s\-:|]+\|/.test(row.trim())
+
+      let headerIdx = -1, sepIdx = -1
+      for (let j = 0; j < tableLines.length; j++) {
+        if (isSep(tableLines[j])) { sepIdx = j; headerIdx = j - 1; break }
+      }
+      if (headerIdx >= 0 && sepIdx >= 0) {
+        const headers = parseRow(tableLines[headerIdx])
+        const bodyRows = tableLines.slice(sepIdx + 1).filter(r => !isSep(r))
+        const colW = Math.floor(9360 / headers.length)
+
+        // Header cells: built directly from markdown text with hex colors.
+        // No DOM → no rgb() normalisation → Word gets #264b6e for every cell.
+        html += `<table style="border-collapse:separate;border-spacing:0;width:100%;table-layout:fixed">`
+        html += `<colgroup>${headers.map(() => `<col width="${colW}">`).join('')}</colgroup>`
+        html += `<thead><tr>`
+        headers.forEach(h => {
+          const text = h.replace(/\*\*(.*?)\*\*/g, '$1').replace(/\*(.*?)\*/g, '$1')
+          html += `<td width="${colW}" bgcolor="#264b6e" `
+            + `style="background-color:#264b6e;color:white;padding:8px 12px;`
+            + `text-align:left;font-weight:bold;font-size:12px;width:${colW}px">`
+            + `${text}</td>`
+        })
+        html += `</tr></thead><tbody>`
+        bodyRows.forEach(row => {
+          const cells = parseRow(row)
+          html += `<tr>`
+          cells.forEach(cell => {
+            html += `<td style="padding:7px 12px;border-bottom:1px solid #e8f0f7;`
+              + `vertical-align:top;color:#1a2a3a">${inlineMarkdown(cell)}</td>`
+          })
+          html += `</tr>`
+        })
+        html += `</tbody></table>`
+      }
+      continue
+    }
+
+    // ── Headings ───────────────────────────────────────────────────────────
+    if (trimmed.startsWith('## ')) {
+      html += `<div style="font-size:15px;font-weight:700;color:#264b6e;margin-top:14px;`
+        + `margin-bottom:6px;padding-bottom:4px;border-bottom:1px solid #e8f0f7">`
+        + `${inlineMarkdown(trimmed.slice(3))}</div>`
+    } else if (trimmed.startsWith('### ')) {
+      html += `<div style="font-size:14px;font-weight:700;color:#368087;margin-top:10px;`
+        + `margin-bottom:4px">${inlineMarkdown(trimmed.slice(4))}</div>`
+    } else if (trimmed.startsWith('# ')) {
+      html += `<div style="font-size:17px;font-weight:900;color:#264b6e;margin-top:16px;`
+        + `margin-bottom:8px">${inlineMarkdown(trimmed.slice(2))}</div>`
+    // ── List items ─────────────────────────────────────────────────────────
+    } else if (trimmed.startsWith('- ') || trimmed.startsWith('* ')) {
+      html += `<div style="padding-left:16px;margin-bottom:4px;line-height:1.6">`
+        + `<span style="color:#5abfc3">•</span> ${inlineMarkdown(trimmed.slice(2))}</div>`
+    } else if (/^\d+\.\s/.test(trimmed)) {
+      html += `<div style="padding-left:16px;margin-bottom:4px;line-height:1.6">`
+        + `${inlineMarkdown(trimmed)}</div>`
+    // ── Blockquote ─────────────────────────────────────────────────────────
+    } else if (trimmed.startsWith('> ')) {
+      html += `<div style="border-left:3px solid #5abfc3;padding-left:12px;margin:8px 0;`
+        + `color:#368087;font-style:italic">${inlineMarkdown(trimmed.slice(2))}</div>`
+    // ── HR ─────────────────────────────────────────────────────────────────
+    } else if (/^[-*_]{3,}$/.test(trimmed)) {
+      html += `<div style="border-top:1px solid #e5e5e5;margin:12px 0"></div>`
+    // ── Paragraph ──────────────────────────────────────────────────────────
+    } else if (trimmed !== '') {
+      html += `<div style="margin-bottom:8px;line-height:1.7">${inlineMarkdown(trimmed)}</div>`
+    }
+    i++
+  }
+
+  return `<html><head><meta charset="UTF-8"><style>`
+    + `body{font-family:Lato,Arial,sans-serif;font-size:13px;color:#1a2a3a;line-height:1.6}`
+    + `</style></head>`
+    + `<body style="font-family:Lato,Arial,sans-serif;font-size:13px;color:#1a2a3a">`
+    + `${html}</body></html>`
+}
+// ── End Word HTML generator ────────────────────────────────────────────────
+
 function fixTableMarkdown(content: string): string {
   const lines = content.split('\n')
   const result: string[] = []
@@ -46,61 +163,16 @@ export default function AsistentePage() {
   const messageRefs = useRef<(HTMLDivElement | null)[]>([])
 
   async function handleCopy(content: string, index: number) {
-    const element = messageRefs.current[index]
-    if (element) {
-      // ── Word-compatibility post-processing ───────────────────────────────
-      // 1. element.innerHTML serialises React hex colours as rgb() values,
-      //    which Word handles inconsistently.
-      // 2. Word has a long-standing bug: with border-collapse:collapse it
-      //    drops the background of the *last* <th> in a row while collapsing
-      //    the right border.
-      // 3. Word ignores <style> blocks from clipboard HTML; only inline styles
-      //    and the legacy `bgcolor` HTML attribute are applied reliably.
-      //
-      // Fix: rewrite every <th> and <thead> with explicit hex inline-style
-      // AND the legacy bgcolor attribute that Word has always honoured.
-      // ─────────────────────────────────────────────────────────────────────
-      let inner = element.innerHTML
-
-      // ── Step 1: kill border-collapse:collapse on every <table> ──────────
-      inner = inner.replace(/border-collapse\s*:\s*collapse/gi,
-        'border-collapse:separate;border-spacing:0')
-
-      // ── Step 2: rewrite <thead> with bgcolor on both thead AND its <tr> ──
-      // Word needs bgcolor on the row itself, not just the section element.
-      inner = inner.replace(/<thead\b([^>]*)>/gi, (_m, attrs) => {
-        const clean = attrs
-          .replace(/\s*style="[^"]*"/gi, '')
-          .replace(/\s*bgcolor="[^"]*"/gi, '')
-        return `<thead${clean} bgcolor="#264b6e" style="background-color:#264b6e">`
-      })
-
-      // ── Step 3: convert <th> → <td> with header styling ──────────────────
-      // Word has a long-standing bug where it drops the background of the
-      // *last* <th> in a row regardless of bgcolor/style. <td> does NOT have
-      // this bug. We convert every header cell to <td> with explicit bold
-      // styling + bgcolor so Word treats all columns identically.
-      inner = inner.replace(/<th\b([^>]*)>/gi, (_m, attrs) => {
-        const clean = attrs
-          .replace(/\s*style="[^"]*"/gi, '')
-          .replace(/\s*bgcolor="[^"]*"/gi, '')
-        return `<td${clean} bgcolor="#264b6e" style="background-color:#264b6e;color:white;padding:8px 12px;text-align:left;font-weight:bold;font-size:12px">`
-      })
-      inner = inner.replace(/<\/th>/gi, '</td>')
-
-      const html = `<html><head><meta charset="UTF-8"><style>
-body{font-family:Lato,Arial,sans-serif;font-size:13px;color:#1a2a3a}
-table{border-collapse:separate;border-spacing:0;width:100%}
-th{background-color:#264b6e;color:white;padding:8px 12px;text-align:left;font-weight:bold;font-size:12px}
-td{padding:7px 12px;border-bottom:1px solid #e8f0f7;vertical-align:top}
-strong{font-weight:bold;color:#264b6e}
-</style></head><body>${inner}</body></html>`
+    // Build Word-compatible HTML directly from markdown — bypasses the DOM
+    // entirely so hex colours are never normalised to rgb() by the browser.
+    try {
+      const html = buildWordHtml(content)
       const htmlBlob = new Blob([html], { type: 'text/html' })
       const textBlob = new Blob([content], { type: 'text/plain' })
       await navigator.clipboard.write([
         new ClipboardItem({ 'text/html': htmlBlob, 'text/plain': textBlob })
       ])
-    } else {
+    } catch {
       await navigator.clipboard.writeText(content)
     }
     setCopiedIndex(index)
