@@ -10,6 +10,13 @@ export default function AsistentePage() {
   const [messages, setMessages] = useState<{role: string, content: string}[]>([])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
+  const [copiedIndex, setCopiedIndex] = useState<number | null>(null)
+
+  async function handleCopy(content: string, index: number) {
+    await navigator.clipboard.writeText(content)
+    setCopiedIndex(index)
+    setTimeout(() => setCopiedIndex(null), 2000)
+  }
   const router = useRouter()
   const supabase = createClient()
 
@@ -80,6 +87,7 @@ export default function AsistentePage() {
               {msg.role === 'user' ? (
                 <span style={{ whiteSpace: 'pre-wrap' }}>{msg.content}</span>
               ) : (
+                <>
                 <ReactMarkdown
                   remarkPlugins={[remarkGfm]}
                   components={{
@@ -148,6 +156,22 @@ export default function AsistentePage() {
                 >
                   {msg.content}
                 </ReactMarkdown>
+                <div style={{ marginTop: 8, display: 'flex', justifyContent: 'flex-end' }}>
+                  <button
+                    onClick={() => handleCopy(msg.content, i)}
+                    style={{
+                      background: copiedIndex === i ? '#368087' : '#f0f4f8',
+                      color: copiedIndex === i ? 'white' : '#368087',
+                      border: 'none', borderRadius: 6, padding: '4px 12px',
+                      fontSize: 11, fontWeight: 700, cursor: 'pointer',
+                      fontFamily: 'Lato, sans-serif', transition: 'all 0.2s',
+                      letterSpacing: 0.5
+                    }}
+                  >
+                    {copiedIndex === i ? '¡Copiado!' : 'Copiar'}
+                  </button>
+                </div>
+                </>
               )}
             </div>
           </div>
