@@ -63,15 +63,11 @@ export default function AsistentePage() {
       let inner = element.innerHTML
 
       // ── Step 1: kill border-collapse:collapse on every <table> ──────────
-      // React renders the table with an inline style="...border-collapse:collapse..."
-      // That inline style has higher specificity than anything else and is the
-      // root cause of Word dropping the background on the last <th>.
-      // Replacing it with separate+spacing:0 gives identical visual output
-      // but bypasses the Word rendering bug entirely.
       inner = inner.replace(/border-collapse\s*:\s*collapse/gi,
         'border-collapse:separate;border-spacing:0')
 
-      // ── Step 2: rewrite <thead> with explicit hex bgcolor ────────────────
+      // ── Step 2: rewrite <thead> with bgcolor on both thead AND its <tr> ──
+      // Word needs bgcolor on the row itself, not just the section element.
       inner = inner.replace(/<thead\b([^>]*)>/gi, (_m, attrs) => {
         const clean = attrs
           .replace(/\s*style="[^"]*"/gi, '')
@@ -79,16 +75,18 @@ export default function AsistentePage() {
         return `<thead${clean} bgcolor="#264b6e" style="background-color:#264b6e">`
       })
 
-      // ── Step 3: rewrite every <th> with explicit hex bgcolor ─────────────
-      // The browser serialises React's hex colours as rgb() in innerHTML;
-      // we replace the whole style with a clean hex version plus the legacy
-      // bgcolor attribute that Word has always honoured.
+      // ── Step 3: convert <th> → <td> with header styling ──────────────────
+      // Word has a long-standing bug where it drops the background of the
+      // *last* <th> in a row regardless of bgcolor/style. <td> does NOT have
+      // this bug. We convert every header cell to <td> with explicit bold
+      // styling + bgcolor so Word treats all columns identically.
       inner = inner.replace(/<th\b([^>]*)>/gi, (_m, attrs) => {
         const clean = attrs
           .replace(/\s*style="[^"]*"/gi, '')
           .replace(/\s*bgcolor="[^"]*"/gi, '')
-        return `<th${clean} bgcolor="#264b6e" style="background-color:#264b6e;color:white;padding:8px 12px;text-align:left;font-weight:bold;font-size:12px">`
+        return `<td${clean} bgcolor="#264b6e" style="background-color:#264b6e;color:white;padding:8px 12px;text-align:left;font-weight:bold;font-size:12px">`
       })
+      inner = inner.replace(/<\/th>/gi, '</td>')
 
       const html = `<html><head><meta charset="UTF-8"><style>
 body{font-family:Lato,Arial,sans-serif;font-size:13px;color:#1a2a3a}
