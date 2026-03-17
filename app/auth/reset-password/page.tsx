@@ -14,12 +14,25 @@ export default function ResetPasswordPage() {
   const supabase = createClient()
 
   useEffect(() => {
-    // Supabase procesa el token del hash de la URL automáticamente
-    supabase.auth.onAuthStateChange((event) => {
-      if (event === 'PASSWORD_RECOVERY') {
-        setReady(true)
+    async function exchangeCode() {
+      const params = new URLSearchParams(window.location.search)
+      const code = params.get('code')
+      if (code) {
+        const { error } = await supabase.auth.exchangeCodeForSession(code)
+        if (error) {
+          setError('El enlace ha caducado o no es válido. Solicita uno nuevo.')
+        } else {
+          setReady(true)
+        }
+      } else {
+        supabase.auth.onAuthStateChange((event) => {
+          if (event === 'PASSWORD_RECOVERY') {
+            setReady(true)
+          }
+        })
       }
-    })
+    }
+    exchangeCode()
   }, [supabase])
 
   async function handleReset() {
@@ -54,10 +67,7 @@ export default function ResetPasswordPage() {
         boxShadow: '0 2px 16px rgba(38,75,110,0.10)'
       }}>
         <div style={{ marginBottom: 32, textAlign: 'center' }}>
-          <div style={{
-            fontSize: 11, fontWeight: 700, letterSpacing: 2,
-            color: '#5abfc3', textTransform: 'uppercase', marginBottom: 8
-          }}>
+          <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 2, color: '#5abfc3', textTransform: 'uppercase', marginBottom: 8 }}>
             Asistente Fiscal IA
           </div>
           <div style={{ fontSize: 22, fontWeight: 900, color: '#264b6e' }}>
@@ -65,7 +75,16 @@ export default function ResetPasswordPage() {
           </div>
         </div>
 
-        {!ready ? (
+        {error && !ready ? (
+          <div>
+            <div style={{ background: '#fdecea', color: '#c64133', borderRadius: 8, padding: '16px', fontSize: 14, marginBottom: 24, textAlign: 'center', lineHeight: 1.6 }}>
+              {error}
+            </div>
+            <a href="/auth/forgot-password" style={{ display: 'block', textAlign: 'center', fontSize: 13, color: '#5abfc3', textDecoration: 'none' }}>
+              Solicitar nuevo enlace
+            </a>
+          </div>
+        ) : !ready ? (
           <div style={{ textAlign: 'center', color: '#8bafc8', fontSize: 14 }}>
             Verificando enlace...
           </div>
@@ -80,15 +99,9 @@ export default function ResetPasswordPage() {
                 value={password}
                 onChange={e => setPassword(e.target.value)}
                 placeholder="Mínimo 6 caracteres"
-                style={{
-                  width: '100%', padding: '10px 14px', borderRadius: 8,
-                  border: '1.5px solid #e5e5e5', fontSize: 14,
-                  fontFamily: 'Lato, sans-serif', outline: 'none',
-                  color: '#1a2a3a'
-                }}
+                style={{ width: '100%', padding: '10px 14px', borderRadius: 8, border: '1.5px solid #e5e5e5', fontSize: 14, fontFamily: 'Lato, sans-serif', outline: 'none', color: '#1a2a3a' }}
               />
             </div>
-
             <div style={{ marginBottom: 24 }}>
               <label style={{ fontSize: 12, fontWeight: 700, color: '#264b6e', display: 'block', marginBottom: 6 }}>
                 Confirmar contraseña
@@ -99,34 +112,18 @@ export default function ResetPasswordPage() {
                 onChange={e => setConfirm(e.target.value)}
                 onKeyDown={e => e.key === 'Enter' && handleReset()}
                 placeholder="Repite la contraseña"
-                style={{
-                  width: '100%', padding: '10px 14px', borderRadius: 8,
-                  border: '1.5px solid #e5e5e5', fontSize: 14,
-                  fontFamily: 'Lato, sans-serif', outline: 'none',
-                  color: '#1a2a3a'
-                }}
+                style={{ width: '100%', padding: '10px 14px', borderRadius: 8, border: '1.5px solid #e5e5e5', fontSize: 14, fontFamily: 'Lato, sans-serif', outline: 'none', color: '#1a2a3a' }}
               />
             </div>
-
             {error && (
-              <div style={{
-                background: '#fdecea', color: '#c64133', borderRadius: 8,
-                padding: '10px 14px', fontSize: 13, marginBottom: 16
-              }}>
+              <div style={{ background: '#fdecea', color: '#c64133', borderRadius: 8, padding: '10px 14px', fontSize: 13, marginBottom: 16 }}>
                 {error}
               </div>
             )}
-
             <button
               onClick={handleReset}
               disabled={loading || !password || !confirm}
-              style={{
-                width: '100%', padding: '12px', borderRadius: 8,
-                background: loading || !password || !confirm ? '#e5e5e5' : '#264b6e',
-                color: 'white', fontSize: 14, fontWeight: 700,
-                border: 'none', cursor: loading || !password || !confirm ? 'not-allowed' : 'pointer',
-                fontFamily: 'Lato, sans-serif'
-              }}
+              style={{ width: '100%', padding: '12px', borderRadius: 8, background: loading || !password || !confirm ? '#e5e5e5' : '#264b6e', color: 'white', fontSize: 14, fontWeight: 700, border: 'none', cursor: loading || !password || !confirm ? 'not-allowed' : 'pointer', fontFamily: 'Lato, sans-serif' }}
             >
               {loading ? 'Guardando...' : 'Guardar nueva contraseña'}
             </button>
