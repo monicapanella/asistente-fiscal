@@ -7,6 +7,37 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import rehypeRaw from 'rehype-raw'
 
+function fixTableMarkdown(content: string): string {
+  const lines = content.split('\n')
+  const result: string[] = []
+  let inTable = false
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]
+    const trimmed = line.trim()
+    const isTableRow = trimmed.startsWith('|')
+    const isSeparator = /^\|[\s\-:|]+\|/.test(trimmed)
+
+    if (isTableRow) {
+      inTable = !isSeparator || inTable
+      result.push(line)
+    } else if (inTable && trimmed.length > 0 && !trimmed.startsWith('#')) {
+      // Line spilled out of a table cell — append to last table row's last cell
+      const last = result[result.length - 1]
+      if (last && last.trim().startsWith('|')) {
+        result[result.length - 1] = last.trimEnd().replace(/\|(\s*)$/, `<br>${trimmed}|`)
+      } else {
+        inTable = false
+        result.push(line)
+      }
+    } else {
+      if (!isTableRow) inTable = false
+      result.push(line)
+    }
+  }
+  return result.join('\n')
+}
+
 export default function AsistentePage() {
   const [messages, setMessages] = useState<{role: string, content: string}[]>([])
   const [input, setInput] = useState('')
@@ -171,7 +202,7 @@ export default function AsistentePage() {
                     ),
                   }}
                 >
-                  {msg.content}
+                  {fixTableMarkdown(msg.content)}
                 </ReactMarkdown>
                 </div>
                 <div style={{ marginTop: 8, display: 'flex', justifyContent: 'flex-end' }}>
