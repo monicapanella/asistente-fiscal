@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
+import ReactMarkdown from 'react-markdown'
 
 export default function AsistentePage() {
   const [messages, setMessages] = useState<{role: string, content: string}[]>([])
@@ -38,7 +39,7 @@ export default function AsistentePage() {
 
   return (
     <div style={{ minHeight: '100vh', background: '#fbf6f3', fontFamily: 'Lato, sans-serif', display: 'flex', flexDirection: 'column' }}>
-      
+
       {/* HEADER */}
       <div style={{ background: '#264b6e', padding: '16px 32px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <div>
@@ -52,7 +53,7 @@ export default function AsistentePage() {
 
       {/* CHAT */}
       <div style={{ flex: 1, maxWidth: 800, width: '100%', margin: '0 auto', padding: '24px 24px 0', display: 'flex', flexDirection: 'column', gap: 16 }}>
-        
+
         {messages.length === 0 && (
           <div style={{ textAlign: 'center', padding: '60px 20px' }}>
             <div style={{ fontSize: 32, marginBottom: 12 }}>⚖️</div>
@@ -66,14 +67,63 @@ export default function AsistentePage() {
         {messages.map((msg, i) => (
           <div key={i} style={{ display: 'flex', justifyContent: msg.role === 'user' ? 'flex-end' : 'flex-start' }}>
             <div style={{
-              maxWidth: '80%', padding: '12px 16px', borderRadius: 12,
+              maxWidth: '80%',
+              padding: '12px 16px',
+              borderRadius: 12,
               background: msg.role === 'user' ? '#264b6e' : 'white',
               color: msg.role === 'user' ? 'white' : '#1a2a3a',
-              fontSize: 14, lineHeight: 1.6,
+              fontSize: 14,
+              lineHeight: 1.6,
               boxShadow: '0 1px 4px rgba(38,75,110,0.08)',
-              whiteSpace: 'pre-wrap'
             }}>
-              {msg.content}
+              {msg.role === 'user' ? (
+                <span style={{ whiteSpace: 'pre-wrap' }}>{msg.content}</span>
+              ) : (
+                <ReactMarkdown
+                  components={{
+                    h2: ({children}) => (
+                      <div style={{ fontSize: 15, fontWeight: 700, color: '#264b6e', marginTop: 14, marginBottom: 6, paddingBottom: 4, borderBottom: '1px solid #e8f0f7' }}>
+                        {children}
+                      </div>
+                    ),
+                    h3: ({children}) => (
+                      <div style={{ fontSize: 14, fontWeight: 700, color: '#368087', marginTop: 10, marginBottom: 4 }}>
+                        {children}
+                      </div>
+                    ),
+                    strong: ({children}) => (
+                      <strong style={{ fontWeight: 700, color: '#264b6e' }}>{children}</strong>
+                    ),
+                    p: ({children}) => (
+                      <div style={{ marginBottom: 8, lineHeight: 1.7 }}>{children}</div>
+                    ),
+                    ul: ({children}) => (
+                      <div style={{ marginTop: 4, marginBottom: 8 }}>{children}</div>
+                    ),
+                    li: ({children}) => (
+                      <div style={{ paddingLeft: 16, marginBottom: 4, lineHeight: 1.6, display: 'flex', gap: 8 }}>
+                        <span style={{ color: '#5abfc3', flexShrink: 0 }}>•</span>
+                        <span>{children}</span>
+                      </div>
+                    ),
+                    hr: () => (
+                      <div style={{ borderTop: '1px solid #e5e5e5', margin: '12px 0' }} />
+                    ),
+                    blockquote: ({children}) => (
+                      <div style={{ borderLeft: '3px solid #5abfc3', paddingLeft: 12, margin: '8px 0', color: '#368087', fontStyle: 'italic' }}>
+                        {children}
+                      </div>
+                    ),
+                    code: ({children}) => (
+                      <code style={{ background: '#f0f4f8', padding: '2px 6px', borderRadius: 4, fontSize: 13, color: '#264b6e' }}>
+                        {children}
+                      </code>
+                    ),
+                  }}
+                >
+                  {msg.content}
+                </ReactMarkdown>
+              )}
             </div>
           </div>
         ))}
@@ -93,7 +143,7 @@ export default function AsistentePage() {
           <textarea
             value={input}
             onChange={e => setInput(e.target.value)}
-            onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); }}}
+            onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
             placeholder="Escribe tu consulta sobre precios de transferencia..."
             rows={3}
             style={{ flex: 1, border: 'none', outline: 'none', resize: 'none', fontSize: 14, fontFamily: 'Lato, sans-serif', color: '#1a2a3a', lineHeight: 1.5 }}
