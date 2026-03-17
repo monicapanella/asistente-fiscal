@@ -1,19 +1,31 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import rehypeRaw from 'rehype-raw'
 
 export default function AsistentePage() {
   const [messages, setMessages] = useState<{role: string, content: string}[]>([])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null)
+  const messageRefs = useRef<(HTMLDivElement | null)[]>([])
 
   async function handleCopy(content: string, index: number) {
-    await navigator.clipboard.writeText(content)
+    const element = messageRefs.current[index]
+    if (element) {
+      const html = element.innerHTML
+      const htmlBlob = new Blob([html], { type: 'text/html' })
+      const textBlob = new Blob([content], { type: 'text/plain' })
+      await navigator.clipboard.write([
+        new ClipboardItem({ 'text/html': htmlBlob, 'text/plain': textBlob })
+      ])
+    } else {
+      await navigator.clipboard.writeText(content)
+    }
     setCopiedIndex(index)
     setTimeout(() => setCopiedIndex(null), 2000)
   }
@@ -88,8 +100,10 @@ export default function AsistentePage() {
                 <span style={{ whiteSpace: 'pre-wrap' }}>{msg.content}</span>
               ) : (
                 <>
+                <div ref={el => { messageRefs.current[i] = el }}>
                 <ReactMarkdown
                   remarkPlugins={[remarkGfm]}
+                  rehypePlugins={[rehypeRaw]}
                   components={{
                     h2: ({children}) => (
                       <div style={{ fontSize: 15, fontWeight: 700, color: '#264b6e', marginTop: 14, marginBottom: 6, paddingBottom: 4, borderBottom: '1px solid #e8f0f7' }}>
@@ -149,13 +163,17 @@ export default function AsistentePage() {
                         {children}
                       </td>
                     ),
+                    tbody: ({children}) => (
+                      <tbody style={{ background: 'white' }}>{children}</tbody>
+                    ),
                     tr: ({children}) => (
-                      <tr style={{ background: 'white' }}>{children}</tr>
+                      <tr>{children}</tr>
                     ),
                   }}
                 >
                   {msg.content}
                 </ReactMarkdown>
+                </div>
                 <div style={{ marginTop: 8, display: 'flex', justifyContent: 'flex-end' }}>
                   <button
                     onClick={() => handleCopy(msg.content, i)}
