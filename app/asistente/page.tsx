@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 
 export default function AsistentePage() {
   const [messages, setMessages] = useState<{role: string, content: string}[]>([])
@@ -80,6 +81,7 @@ export default function AsistentePage() {
                 <span style={{ whiteSpace: 'pre-wrap' }}>{msg.content}</span>
               ) : (
                 <ReactMarkdown
+                  remarkPlugins={[remarkGfm]}
                   components={{
                     h2: ({children}) => (
                       <div style={{ fontSize: 15, fontWeight: 700, color: '#264b6e', marginTop: 14, marginBottom: 6, paddingBottom: 4, borderBottom: '1px solid #e8f0f7' }}>
@@ -118,6 +120,29 @@ export default function AsistentePage() {
                       <code style={{ background: '#f0f4f8', padding: '2px 6px', borderRadius: 4, fontSize: 13, color: '#264b6e' }}>
                         {children}
                       </code>
+                    ),
+                    table: ({children}) => (
+                      <div style={{ overflowX: 'auto', margin: '12px 0' }}>
+                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                          {children}
+                        </table>
+                      </div>
+                    ),
+                    thead: ({children}) => (
+                      <thead style={{ background: '#264b6e', color: 'white' }}>{children}</thead>
+                    ),
+                    th: ({children}) => (
+                      <th style={{ padding: '8px 12px', textAlign: 'left', fontWeight: 700, fontSize: 12, letterSpacing: 0.5 }}>
+                        {children}
+                      </th>
+                    ),
+                    td: ({children}) => (
+                      <td style={{ padding: '7px 12px', borderBottom: '1px solid #e8f0f7', color: '#1a2a3a' }}>
+                        {children}
+                      </td>
+                    ),
+                    tr: ({children}) => (
+                      <tr style={{ background: 'white' }}>{children}</tr>
                     ),
                   }}
                 >
