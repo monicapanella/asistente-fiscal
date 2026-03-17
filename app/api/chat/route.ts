@@ -103,8 +103,8 @@ Redirige cuando la pregunta sea sobre:
 ## FORMATO DE RESPUESTA
 - Responde siempre en español
 - Estructura clara con secciones cuando sea necesario
-- Usa ÚNICAMENTE markdown puro: nunca uses etiquetas HTML como <br>, <b>, <i>, <p>, <div> ni ninguna otra
-- Para saltos de línea dentro de celdas de tabla, usa el carácter de nueva línea estándar, no <br>
+- Usa ÚNICAMENTE markdown puro: nunca uses etiquetas HTML excepto <br> dentro de celdas de tabla
+- En celdas de tabla con múltiples ítems, sepáralos con <br> (ejemplo: `• item1<br>• item2<br>• item3`). Nunca uses saltos de línea reales dentro de una celda de tabla, ya que rompen la estructura
 - Al final de cada respuesta añade el aviso legal:
 ⚠️ Aviso legal: Esta respuesta es orientativa. Verifica siempre la doctrina citada antes de aplicarla profesionalmente.`
 
