@@ -48,7 +48,14 @@ export default function AsistentePage() {
   async function handleCopy(content: string, index: number) {
     const element = messageRefs.current[index]
     if (element) {
-      const html = element.innerHTML
+      const inner = element.innerHTML
+      const html = `<html><head><meta charset="UTF-8"><style>
+body{font-family:Lato,Arial,sans-serif;font-size:13px;color:#1a2a3a}
+table{border-collapse:collapse;width:100%}
+th{background-color:#264b6e;color:white;padding:8px 12px;text-align:left;font-weight:bold;font-size:12px}
+td{padding:7px 12px;border-bottom:1px solid #e8f0f7;vertical-align:top}
+strong{font-weight:bold;color:#264b6e}
+</style></head><body>${inner}</body></html>`
       const htmlBlob = new Blob([html], { type: 'text/html' })
       const textBlob = new Blob([content], { type: 'text/plain' })
       await navigator.clipboard.write([
@@ -182,10 +189,10 @@ export default function AsistentePage() {
                       </div>
                     ),
                     thead: ({children}) => (
-                      <thead style={{ background: '#264b6e', color: 'white' }}>{children}</thead>
+                      <thead style={{ backgroundColor: '#264b6e', color: 'white' }}>{children}</thead>
                     ),
                     th: ({children}) => (
-                      <th style={{ padding: '8px 12px', textAlign: 'left', fontWeight: 700, fontSize: 12, letterSpacing: 0.5, color: 'white', background: '#264b6e' }}>
+                      <th style={{ padding: '8px 12px', textAlign: 'left', fontWeight: 700, fontSize: 12, color: 'white', backgroundColor: '#264b6e' }}>
                         {children}
                       </th>
                     ),
