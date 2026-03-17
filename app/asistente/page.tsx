@@ -62,7 +62,16 @@ export default function AsistentePage() {
       // ─────────────────────────────────────────────────────────────────────
       let inner = element.innerHTML
 
-      // Replace <thead ...> — strip any existing style/bgcolor, re-apply clean
+      // ── Step 1: kill border-collapse:collapse on every <table> ──────────
+      // React renders the table with an inline style="...border-collapse:collapse..."
+      // That inline style has higher specificity than anything else and is the
+      // root cause of Word dropping the background on the last <th>.
+      // Replacing it with separate+spacing:0 gives identical visual output
+      // but bypasses the Word rendering bug entirely.
+      inner = inner.replace(/border-collapse\s*:\s*collapse/gi,
+        'border-collapse:separate;border-spacing:0')
+
+      // ── Step 2: rewrite <thead> with explicit hex bgcolor ────────────────
       inner = inner.replace(/<thead\b([^>]*)>/gi, (_m, attrs) => {
         const clean = attrs
           .replace(/\s*style="[^"]*"/gi, '')
@@ -70,7 +79,10 @@ export default function AsistentePage() {
         return `<thead${clean} bgcolor="#264b6e" style="background-color:#264b6e">`
       })
 
-      // Replace every <th ...> — same strategy
+      // ── Step 3: rewrite every <th> with explicit hex bgcolor ─────────────
+      // The browser serialises React's hex colours as rgb() in innerHTML;
+      // we replace the whole style with a clean hex version plus the legacy
+      // bgcolor attribute that Word has always honoured.
       inner = inner.replace(/<th\b([^>]*)>/gi, (_m, attrs) => {
         const clean = attrs
           .replace(/\s*style="[^"]*"/gi, '')
@@ -80,7 +92,7 @@ export default function AsistentePage() {
 
       const html = `<html><head><meta charset="UTF-8"><style>
 body{font-family:Lato,Arial,sans-serif;font-size:13px;color:#1a2a3a}
-table{border-collapse:collapse;width:100%}
+table{border-collapse:separate;border-spacing:0;width:100%}
 th{background-color:#264b6e;color:white;padding:8px 12px;text-align:left;font-weight:bold;font-size:12px}
 td{padding:7px 12px;border-bottom:1px solid #e8f0f7;vertical-align:top}
 strong{font-weight:bold;color:#264b6e}
