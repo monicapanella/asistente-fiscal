@@ -65,7 +65,7 @@ export default function LoginPage() {
           />
         </div>
 
-        <div style={{ marginBottom: 24 }}>
+        <div style={{ marginBottom: 8 }}>
           <label style={{ fontSize: 12, fontWeight: 700, color: '#264b6e', display: 'block', marginBottom: 6 }}>
             Contraseña
           </label>
@@ -82,6 +82,12 @@ export default function LoginPage() {
               color: '#1a2a3a'
             }}
           />
+        </div>
+
+        <div style={{ textAlign: 'right', marginBottom: 20 }}>
+          <a href="/auth/forgot-password" style={{ fontSize: 12, color: '#5abfc3', textDecoration: 'none' }}>
+            ¿Olvidaste tu contraseña?
+          </a>
         </div>
 
         {error && (
