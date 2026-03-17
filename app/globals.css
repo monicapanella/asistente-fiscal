@@ -24,3 +24,10 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* Fix: strong/em inside table headers must inherit white color.
+   Without this, the ReactMarkdown strong component (color:#264b6e)
+   renders dark-blue text on dark-blue background → invisible. */
+th strong, th em, th span, th a {
+  color: white !important;
+}
