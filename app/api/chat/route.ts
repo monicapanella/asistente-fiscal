@@ -1,9 +1,147 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { NextRequest, NextResponse } from 'next/server'
+import { createServiceClient } from '@/lib/supabase-server'
+import OpenAI from 'openai'
 
-const client = new Anthropic({
+// ============================================
+// CLIENTES
+// ============================================
+
+const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY
 })
+
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY
+})
+
+// ============================================
+// RAG: Búsqueda semántica en el corpus
+// ============================================
+
+async function searchCorpus(query: string, matchCount: number = 5, threshold: number = 0.7): Promise<string> {
+  try {
+    const supabase = createServiceClient()
+
+    // 1. Generar embedding de la consulta del usuario
+    const embeddingResponse = await openai.embeddings.create({
+      model: 'text-embedding-3-small',
+      input: query,
+    })
+    const queryEmbedding = embeddingResponse.data[0].embedding
+
+    // 2. Buscar chunks similares en Supabase
+    const { data, error } = await supabase.rpc('match_documents', {
+      query_embedding: queryEmbedding,
+      match_threshold: threshold,
+      match_count: matchCount,
+    })
+
+    if (error) {
+      console.error('Error en búsqueda semántica:', error)
+      return ''
+    }
+
+    if (!data || data.length === 0) {
+      return ''
+    }
+
+    // 3. Formatear los resultados como contexto para Claude
+    const contextParts = data.map((doc: {
+      source_file: string
+      source_type: string
+      title: string | null
+      content: string
+      similarity: number
+    }, i: number) => {
+      const sourceLabel = {
+        'ley': 'Ley 27/2014 IS',
+        'reglamento': 'RD 634/2015',
+        'directrices_ocde': 'Directrices OCDE PT 2022',
+        'modulo_casos_complejos': 'Módulo Casos Complejos PT',
+      }[doc.source_type] || doc.source_file
+
+      return `[Fuente ${i + 1}: ${sourceLabel}${doc.title ? ' — ' + doc.title : ''} (similitud: ${(doc.similarity * 100).toFixed(0)}%)]\n${doc.content}`
+    })
+
+    return contextParts.join('\n\n---\n\n')
+  } catch (err) {
+    console.error('Error en searchCorpus:', err)
+    return ''
+  }
+}
+
+// ============================================
+// POST-PROCESSING: Verificación de citas
+// ============================================
+
+function extractCitationNumbers(text: string): string[] {
+  const pattern = /\b(\d{2}\/\d{4,5}\/\d{4})\b/g
+  const matches = text.match(pattern)
+  return matches ? [...new Set(matches)] : []
+}
+
+async function verifyCitations(citations: string[]): Promise<{
+  number: string
+  verified: boolean
+  status: string
+  subject: string | null
+}[]> {
+  if (citations.length === 0) return []
+
+  try {
+    const supabase = createServiceClient()
+    const results = []
+
+    for (const citation of citations) {
+      const { data, error } = await supabase.rpc('verify_citation', {
+        citation_number: citation,
+      })
+
+      if (error) {
+        console.error(`Error verificando cita ${citation}:`, error)
+        results.push({ number: citation, verified: false, status: 'ERROR', subject: null })
+      } else if (data && data.length > 0) {
+        results.push({
+          number: data[0].resolution_number,
+          verified: data[0].is_verified,
+          status: data[0].status,
+          subject: data[0].subject,
+        })
+      }
+    }
+
+    return results
+  } catch (err) {
+    console.error('Error en verifyCitations:', err)
+    return citations.map(c => ({ number: c, verified: false, status: 'ERROR', subject: null }))
+  }
+}
+
+function formatCitationReport(verificationResults: {
+  number: string
+  verified: boolean
+  status: string
+  subject: string | null
+}[]): string {
+  if (verificationResults.length === 0) return ''
+
+  const lines = verificationResults.map(r => {
+    if (r.verified && r.status === 'VERIFICADA') {
+      return `✅ **${r.number}** — VERIFICADA en la base doctrinal del despacho`
+    } else if (r.status === 'NO VERIFICADA') {
+      return `⚠️ **${r.number}** — No encontrada en la base doctrinal. Verificar en [DYCTEA](https://serviciostelematicosext.hacienda.gob.es/DYCTEA/) antes de usar en escritos formales`
+    } else {
+      return `❓ **${r.number}** — Estado: ${r.status}`
+    }
+  })
+
+  return `\n\n---\n\n**🔍 Verificación de citas:**\n\n${lines.join('\n\n')}`
+}
+
+// ============================================
+// SYSTEM PROMPT Y MAPA DOCTRINAL
+// ============================================
 
 const MAPA_DOCTRINAL = `
 (1) Citar resoluciones TEAC con número exacto cuando el criterio está VERIFICADO.
@@ -103,13 +241,6 @@ Esta es tu instrucción más importante. Cuando respondas a cualquier consulta:
 
 Piensa como un socio senior que revisa el trabajo de un asociado: no solo validas lo correcto, también señalas los huecos, los riesgos ocultos y las oportunidades perdidas.
 
-Ejemplo de lo que NO debes hacer:
-- Usuario: "¿Qué método uso para una operación de préstamo intragrupo?"
-- Respuesta pobre: "El CUP con tipos de interés de mercado es el método preferente según las Directrices OCDE."
-
-Ejemplo de lo que SÍ debes hacer:
-- Respuesta proactiva: Respondes sobre el CUP + Señalas que hay que analizar si el préstamo tiene sustancia o podría recalificarse como aportación de capital (OCDE Cap. I párrafo 1.164) + Preguntas si hay garantías intragrupo implicadas + Indicas que la AEAT ha ajustado sistemáticamente préstamos sin garantías reales + Sugieres verificar la capacidad de endeudamiento del prestatario como test de plena competencia + Alertas sobre el Art. 20 LIS (limitación gastos financieros: 30% EBITDA).
-
 ## CLASIFICADOR DE COMPLEJIDAD
 
 Antes de responder, evalúa internamente la complejidad del caso. No menciones esta evaluación al usuario — adapta tu respuesta.
@@ -143,10 +274,8 @@ Responde directamente con la estructura estándar, pero siempre incluyendo la se
 
 ## PLAYBOOKS POR TIPO DE OPERACIÓN
 
-Cuando detectes que el caso encaja en uno de estos perfiles, activa el razonamiento correspondiente:
-
 PLAYBOOK: TRADING DE COMMODITIES
-Se activa cuando: compra-reventa de materias primas, productos energéticos, minerales, con cotización pública. Indicadores: petcoke, coque, antracita, carbón, petróleo, gas, metales, "barco", "cargamento", "FOB", "CIF".
+Se activa cuando: compra-reventa de materias primas, productos energéticos, minerales, con cotización pública.
 Método preferente: CUP con cotizaciones de mercado (OCDE párrafos 2.18-2.22).
 Siempre pregunta: "¿La empresa realiza alguna venta a terceros independientes?" (CUP interno es preferible).
 Siempre alerta: sustancia económica del trader, sexto método en jurisdicciones latinoamericanas, fecha de fijación de precio.
@@ -170,8 +299,6 @@ Se activa cuando: transferencia de funciones/activos/riesgos, conversión de dis
 Siempre alerta: exit charges, transferencia de "algo de valor", análisis antes/después.
 
 ## MARCO NORMATIVO — JERARQUÍA DE FUENTES
-
-Aplica siempre esta jerarquía. La fuente de mayor rango prevalece en caso de conflicto:
 
 1. Ley 27/2014 IS — Art. 18 (máxima autoridad española)
 2. RD 634/2015 — Arts. 13-44 (desarrollo reglamentario)
@@ -209,7 +336,6 @@ Nunca inventes resoluciones, datos de comparables, cifras financieras ni cotizac
 ## PROTOCOLO PARA DOCUMENTOS ADJUNTOS
 
 Cuando el usuario adjunte un documento:
-
 1. Identifica tipo: contrato intragrupo, informe PT anterior, cuentas anuales, acta de inspección.
 2. Si dice "analiza", "revisa", "qué implica" o adjunta sin instrucción → analiza desde perspectiva PT, señala inconsistencias y riesgos.
 3. Si dice "redacta", "genera borrador", "prepara" → genera borrador Word-ready con marcadores [COMPLETAR: dato necesario].
@@ -250,19 +376,39 @@ Redirige cuando la pregunta sea sobre:
 - En celdas de tabla con múltiples ítems, sepáralos con <br>
 - Nunca uses saltos de línea reales dentro de una celda de tabla`
 
+// ============================================
+// API ROUTE HANDLER
+// ============================================
+
 export async function POST(request: NextRequest) {
   try {
     const { message, history } = await request.json()
 
+    // PASO 1: Buscar contexto relevante en el corpus (RAG)
+    console.log('🔍 Buscando contexto en el corpus...')
+    const ragContext = await searchCorpus(message)
+
+    // PASO 2: Construir el mensaje con contexto RAG inyectado
+    let userMessageWithContext = message
+    if (ragContext) {
+      userMessageWithContext = `${message}\n\n---\n\n**[CONTEXTO NORMATIVO RECUPERADO DEL CORPUS — usa esta información para fundamentar tu respuesta, pero no la copies literalmente. Cita las fuentes originales (artículo, párrafo, resolución):]**\n\n${ragContext}`
+      console.log(`✅ Contexto RAG añadido (${ragContext.length} caracteres)`)
+    } else {
+      console.log('ℹ️ Sin contexto RAG relevante para esta consulta')
+    }
+
+    // PASO 3: Preparar mensajes para Claude
     const messages = [
       ...history.map((msg: {role: string, content: string}) => ({
         role: msg.role as 'user' | 'assistant',
         content: msg.content
       })),
-      { role: 'user' as const, content: message }
+      { role: 'user' as const, content: userMessageWithContext }
     ]
 
-    const response = await client.messages.create({
+    // PASO 4: Llamar a Claude
+    console.log('🤖 Llamando a Claude...')
+    const response = await anthropic.messages.create({
       model: 'claude-sonnet-4-20250514',
       max_tokens: 4096,
       system: SYSTEM_PROMPT,
@@ -274,7 +420,25 @@ export async function POST(request: NextRequest) {
       throw new Error('Unexpected response type')
     }
 
-    return NextResponse.json({ response: content.text })
+    let responseText = content.text
+
+    // PASO 5: Post-processing — verificar citas
+    console.log('🔍 Verificando citas...')
+    const citationNumbers = extractCitationNumbers(responseText)
+    
+    if (citationNumbers.length > 0) {
+      console.log(`   Citas encontradas: ${citationNumbers.join(', ')}`)
+      const verificationResults = await verifyCitations(citationNumbers)
+      const citationReport = formatCitationReport(verificationResults)
+      
+      if (citationReport) {
+        responseText += citationReport
+      }
+    } else {
+      console.log('   No se detectaron citas con número de resolución')
+    }
+
+    return NextResponse.json({ response: responseText })
 
   } catch (error) {
     console.error('Error:', error)
