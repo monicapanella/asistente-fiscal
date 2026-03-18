@@ -8,14 +8,10 @@ import remarkGfm from 'remark-gfm'
 import rehypeRaw from 'rehype-raw'
 
 // ── Word HTML generator ────────────────────────────────────────────────────
-// Converts markdown directly to Word-compatible HTML WITHOUT going through
-// the DOM. This avoids the browser normalising hex colours to rgb() in
-// element.innerHTML, which caused Word to drop the last-column background.
 function inlineMarkdown(text: string): string {
-  // Split on <br> tags inserted by fixTableMarkdown so we don't escape them
   const parts = text.split(/(<br\s*\/?>)/gi)
   return parts.map((part, idx) => {
-    if (idx % 2 === 1) return part // preserve <br>
+    if (idx % 2 === 1) return part
     return part
       .replace(/&/g, '&amp;')
       .replace(/</g, '&lt;')
@@ -36,7 +32,6 @@ function buildWordHtml(markdown: string): string {
     const line = lines[i]
     const trimmed = line.trim()
 
-    // ── Table ──────────────────────────────────────────────────────────────
     if (trimmed.startsWith('|')) {
       const tableLines: string[] = []
       while (i < lines.length && lines[i].trim().startsWith('|')) {
@@ -57,8 +52,6 @@ function buildWordHtml(markdown: string): string {
         const bodyRows = tableLines.slice(sepIdx + 1).filter(r => !isSep(r))
         const colW = Math.floor(9360 / headers.length)
 
-        // Header cells: built directly from markdown text with hex colors.
-        // No DOM → no rgb() normalisation → Word gets #264b6e for every cell.
         html += `<table style="border-collapse:separate;border-spacing:0;width:100%;table-layout:fixed">`
         html += `<colgroup>${headers.map(() => `<col width="${colW}">`).join('')}</colgroup>`
         html += `<thead><tr>`
@@ -84,7 +77,6 @@ function buildWordHtml(markdown: string): string {
       continue
     }
 
-    // ── Headings ───────────────────────────────────────────────────────────
     if (trimmed.startsWith('## ')) {
       html += `<div style="font-size:15px;font-weight:700;color:#264b6e;margin-top:14px;`
         + `margin-bottom:6px;padding-bottom:4px;border-bottom:1px solid #e8f0f7">`
@@ -95,21 +87,17 @@ function buildWordHtml(markdown: string): string {
     } else if (trimmed.startsWith('# ')) {
       html += `<div style="font-size:17px;font-weight:900;color:#264b6e;margin-top:16px;`
         + `margin-bottom:8px">${inlineMarkdown(trimmed.slice(2))}</div>`
-    // ── List items ─────────────────────────────────────────────────────────
     } else if (trimmed.startsWith('- ') || trimmed.startsWith('* ')) {
       html += `<div style="padding-left:16px;margin-bottom:4px;line-height:1.6">`
         + `<span style="color:#5abfc3">•</span> ${inlineMarkdown(trimmed.slice(2))}</div>`
     } else if (/^\d+\.\s/.test(trimmed)) {
       html += `<div style="padding-left:16px;margin-bottom:4px;line-height:1.6">`
         + `${inlineMarkdown(trimmed)}</div>`
-    // ── Blockquote ─────────────────────────────────────────────────────────
     } else if (trimmed.startsWith('> ')) {
       html += `<div style="border-left:3px solid #5abfc3;padding-left:12px;margin:8px 0;`
         + `color:#368087;font-style:italic">${inlineMarkdown(trimmed.slice(2))}</div>`
-    // ── HR ─────────────────────────────────────────────────────────────────
     } else if (/^[-*_]{3,}$/.test(trimmed)) {
       html += `<div style="border-top:1px solid #e5e5e5;margin:12px 0"></div>`
-    // ── Paragraph ──────────────────────────────────────────────────────────
     } else if (trimmed !== '') {
       html += `<div style="margin-bottom:8px;line-height:1.7">${inlineMarkdown(trimmed)}</div>`
     }
@@ -139,7 +127,6 @@ function fixTableMarkdown(content: string): string {
       inTable = !isSeparator || inTable
       result.push(line)
     } else if (inTable && trimmed.length > 0 && !trimmed.startsWith('#')) {
-      // Line spilled out of a table cell — append to last table row's last cell
       const last = result[result.length - 1]
       if (last && last.trim().startsWith('|')) {
         result[result.length - 1] = last.trimEnd().replace(/\|(\s*)$/, `<br>${trimmed}|`)
@@ -155,16 +142,31 @@ function fixTableMarkdown(content: string): string {
   return result.join('\n')
 }
 
+// ── Extraer números de resolución de un texto ──────────────────────────────
+function extractCitations(text: string): string[] {
+  const pattern = /\b(\d{2}\/\d{4,5}\/\d{4})\b/g
+  const matches = text.match(pattern)
+  return matches ? [...new Set(matches)] : []
+}
+
+// ── Generar enlaces de verificación para una resolución ────────────────────
+function getCitationLinks(citation: string) {
+  const encoded = encodeURIComponent(citation)
+  return {
+    dyctea: `https://serviciostelematicosext.hacienda.gob.es/DYCTEA/consulta.html?NUM_RESOLUCION=${encoded}`,
+    iberley: `https://www.iberley.es/search/resoluciones?q=${encoded}`,
+  }
+}
+
 export default function AsistentePage() {
   const [messages, setMessages] = useState<{role: string, content: string}[]>([])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null)
+  const [expandedCitations, setExpandedCitations] = useState<number | null>(null)
   const messageRefs = useRef<(HTMLDivElement | null)[]>([])
 
   async function handleCopy(content: string, index: number) {
-    // Build Word-compatible HTML directly from markdown — bypasses the DOM
-    // entirely so hex colours are never normalised to rgb() by the browser.
     try {
       const html = buildWordHtml(content)
       const htmlBlob = new Blob([html], { type: 'text/html' })
@@ -178,10 +180,11 @@ export default function AsistentePage() {
     setCopiedIndex(index)
     setTimeout(() => setCopiedIndex(null), 2000)
   }
+
   const router = useRouter()
-  const supabase = createClient()
 
   async function handleLogout() {
+    const supabase = createClient()
     await supabase.auth.signOut()
     router.push('/login')
   }
@@ -233,116 +236,195 @@ export default function AsistentePage() {
           </div>
         )}
 
-        {messages.map((msg, i) => (
-          <div key={i} style={{ display: 'flex', justifyContent: msg.role === 'user' ? 'flex-end' : 'flex-start' }}>
-            <div style={{
-              maxWidth: '80%',
-              padding: '12px 16px',
-              borderRadius: 12,
-              background: msg.role === 'user' ? '#264b6e' : 'white',
-              color: msg.role === 'user' ? 'white' : '#1a2a3a',
-              fontSize: 14,
-              lineHeight: 1.6,
-              boxShadow: '0 1px 4px rgba(38,75,110,0.08)',
-            }}>
-              {msg.role === 'user' ? (
-                <span style={{ whiteSpace: 'pre-wrap' }}>{msg.content}</span>
-              ) : (
-                <>
-                <div ref={el => { messageRefs.current[i] = el }}>
-                <ReactMarkdown
-                  remarkPlugins={[remarkGfm]}
-                  rehypePlugins={[rehypeRaw]}
-                  components={{
-                    h2: ({children}) => (
-                      <div style={{ fontSize: 15, fontWeight: 700, color: '#264b6e', marginTop: 14, marginBottom: 6, paddingBottom: 4, borderBottom: '1px solid #e8f0f7' }}>
-                        {children}
-                      </div>
-                    ),
-                    h3: ({children}) => (
-                      <div style={{ fontSize: 14, fontWeight: 700, color: '#368087', marginTop: 10, marginBottom: 4 }}>
-                        {children}
-                      </div>
-                    ),
-                    strong: ({children}) => (
-                      <strong style={{ fontWeight: 700, color: '#264b6e' }}>{children}</strong>
-                    ),
-                    p: ({children}) => (
-                      <div style={{ marginBottom: 8, lineHeight: 1.7 }}>{children}</div>
-                    ),
-                    ul: ({children}) => (
-                      <div style={{ marginTop: 4, marginBottom: 8 }}>{children}</div>
-                    ),
-                    li: ({children}) => (
-                      <div style={{ paddingLeft: 16, marginBottom: 4, lineHeight: 1.6, display: 'flex', gap: 8 }}>
-                        <span style={{ color: '#5abfc3', flexShrink: 0 }}>•</span>
-                        <span>{children}</span>
-                      </div>
-                    ),
-                    hr: () => (
-                      <div style={{ borderTop: '1px solid #e5e5e5', margin: '12px 0' }} />
-                    ),
-                    blockquote: ({children}) => (
-                      <div style={{ borderLeft: '3px solid #5abfc3', paddingLeft: 12, margin: '8px 0', color: '#368087', fontStyle: 'italic' }}>
-                        {children}
-                      </div>
-                    ),
-                    code: ({children}) => (
-                      <code style={{ background: '#f0f4f8', padding: '2px 6px', borderRadius: 4, fontSize: 13, color: '#264b6e' }}>
-                        {children}
-                      </code>
-                    ),
-                    table: ({children}) => (
-                      <div style={{ overflowX: 'auto', margin: '12px 0' }}>
-                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+        {messages.map((msg, i) => {
+          const citations = msg.role === 'assistant' ? extractCitations(msg.content) : []
+          const hasCitations = citations.length > 0
+          const isExpanded = expandedCitations === i
+
+          return (
+            <div key={i} style={{ display: 'flex', justifyContent: msg.role === 'user' ? 'flex-end' : 'flex-start' }}>
+              <div style={{
+                maxWidth: '80%',
+                padding: '12px 16px',
+                borderRadius: 12,
+                background: msg.role === 'user' ? '#264b6e' : 'white',
+                color: msg.role === 'user' ? 'white' : '#1a2a3a',
+                fontSize: 14,
+                lineHeight: 1.6,
+                boxShadow: '0 1px 4px rgba(38,75,110,0.08)',
+              }}>
+                {msg.role === 'user' ? (
+                  <span style={{ whiteSpace: 'pre-wrap' }}>{msg.content}</span>
+                ) : (
+                  <>
+                  <div ref={el => { messageRefs.current[i] = el }}>
+                  <ReactMarkdown
+                    remarkPlugins={[remarkGfm]}
+                    rehypePlugins={[rehypeRaw]}
+                    components={{
+                      h2: ({children}) => (
+                        <div style={{ fontSize: 15, fontWeight: 700, color: '#264b6e', marginTop: 14, marginBottom: 6, paddingBottom: 4, borderBottom: '1px solid #e8f0f7' }}>
                           {children}
-                        </table>
-                      </div>
-                    ),
-                    thead: ({children}) => (
-                      <thead style={{ backgroundColor: '#264b6e', color: 'white' }}>{children}</thead>
-                    ),
-                    th: ({children}) => (
-                      <th style={{ padding: '8px 12px', textAlign: 'left', fontWeight: 700, fontSize: 12, color: 'white', backgroundColor: '#264b6e' }}>
-                        {children}
-                      </th>
-                    ),
-                    td: ({children}) => (
-                      <td style={{ padding: '7px 12px', borderBottom: '1px solid #e8f0f7', color: '#1a2a3a' }}>
-                        {children}
-                      </td>
-                    ),
-                    tbody: ({children}) => (
-                      <tbody style={{ background: 'white' }}>{children}</tbody>
-                    ),
-                    tr: ({children}) => (
-                      <tr>{children}</tr>
-                    ),
-                  }}
-                >
-                  {fixTableMarkdown(msg.content)}
-                </ReactMarkdown>
-                </div>
-                <div style={{ marginTop: 8, display: 'flex', justifyContent: 'flex-end' }}>
-                  <button
-                    onClick={() => handleCopy(msg.content, i)}
-                    style={{
-                      background: copiedIndex === i ? '#368087' : '#f0f4f8',
-                      color: copiedIndex === i ? 'white' : '#368087',
-                      border: 'none', borderRadius: 6, padding: '4px 12px',
-                      fontSize: 11, fontWeight: 700, cursor: 'pointer',
-                      fontFamily: 'Lato, sans-serif', transition: 'all 0.2s',
-                      letterSpacing: 0.5
+                        </div>
+                      ),
+                      h3: ({children}) => (
+                        <div style={{ fontSize: 14, fontWeight: 700, color: '#368087', marginTop: 10, marginBottom: 4 }}>
+                          {children}
+                        </div>
+                      ),
+                      strong: ({children}) => (
+                        <strong style={{ fontWeight: 700, color: '#264b6e' }}>{children}</strong>
+                      ),
+                      p: ({children}) => (
+                        <div style={{ marginBottom: 8, lineHeight: 1.7 }}>{children}</div>
+                      ),
+                      ul: ({children}) => (
+                        <div style={{ marginTop: 4, marginBottom: 8 }}>{children}</div>
+                      ),
+                      li: ({children}) => (
+                        <div style={{ paddingLeft: 16, marginBottom: 4, lineHeight: 1.6, display: 'flex', gap: 8 }}>
+                          <span style={{ color: '#5abfc3', flexShrink: 0 }}>•</span>
+                          <span>{children}</span>
+                        </div>
+                      ),
+                      hr: () => (
+                        <div style={{ borderTop: '1px solid #e5e5e5', margin: '12px 0' }} />
+                      ),
+                      blockquote: ({children}) => (
+                        <div style={{ borderLeft: '3px solid #5abfc3', paddingLeft: 12, margin: '8px 0', color: '#368087', fontStyle: 'italic' }}>
+                          {children}
+                        </div>
+                      ),
+                      code: ({children}) => (
+                        <code style={{ background: '#f0f4f8', padding: '2px 6px', borderRadius: 4, fontSize: 13, color: '#264b6e' }}>
+                          {children}
+                        </code>
+                      ),
+                      table: ({children}) => (
+                        <div style={{ overflowX: 'auto', margin: '12px 0' }}>
+                          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                            {children}
+                          </table>
+                        </div>
+                      ),
+                      thead: ({children}) => (
+                        <thead style={{ backgroundColor: '#264b6e', color: 'white' }}>{children}</thead>
+                      ),
+                      th: ({children}) => (
+                        <th style={{ padding: '8px 12px', textAlign: 'left', fontWeight: 700, fontSize: 12, color: 'white', backgroundColor: '#264b6e' }}>
+                          {children}
+                        </th>
+                      ),
+                      td: ({children}) => (
+                        <td style={{ padding: '7px 12px', borderBottom: '1px solid #e8f0f7', color: '#1a2a3a' }}>
+                          {children}
+                        </td>
+                      ),
+                      tbody: ({children}) => (
+                        <tbody style={{ background: 'white' }}>{children}</tbody>
+                      ),
+                      tr: ({children}) => (
+                        <tr>{children}</tr>
+                      ),
                     }}
                   >
-                    {copiedIndex === i ? '¡Copiado!' : 'Copiar'}
-                  </button>
-                </div>
-                </>
-              )}
+                    {fixTableMarkdown(msg.content)}
+                  </ReactMarkdown>
+                  </div>
+
+                  {/* BOTONES: Copiar + Verificar citas */}
+                  <div style={{ marginTop: 8, display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+                    {hasCitations && (
+                      <button
+                        onClick={() => setExpandedCitations(isExpanded ? null : i)}
+                        style={{
+                          background: isExpanded ? '#368087' : '#fff7e0',
+                          color: isExpanded ? 'white' : '#8a6d00',
+                          border: isExpanded ? 'none' : '1px solid #f7c52c',
+                          borderRadius: 6, padding: '4px 12px',
+                          fontSize: 11, fontWeight: 700, cursor: 'pointer',
+                          fontFamily: 'Lato, sans-serif', transition: 'all 0.2s',
+                          letterSpacing: 0.5
+                        }}
+                      >
+                        {isExpanded ? 'Ocultar citas' : `🔍 Verificar citas (${citations.length})`}
+                      </button>
+                    )}
+                    <button
+                      onClick={() => handleCopy(msg.content, i)}
+                      style={{
+                        background: copiedIndex === i ? '#368087' : '#f0f4f8',
+                        color: copiedIndex === i ? 'white' : '#368087',
+                        border: 'none', borderRadius: 6, padding: '4px 12px',
+                        fontSize: 11, fontWeight: 700, cursor: 'pointer',
+                        fontFamily: 'Lato, sans-serif', transition: 'all 0.2s',
+                        letterSpacing: 0.5
+                      }}
+                    >
+                      {copiedIndex === i ? '¡Copiado!' : 'Copiar'}
+                    </button>
+                  </div>
+
+                  {/* PANEL DE VERIFICACIÓN DE CITAS */}
+                  {isExpanded && hasCitations && (
+                    <div style={{
+                      marginTop: 8, padding: 12, borderRadius: 8,
+                      background: '#f8fafb', border: '1px solid #e8f0f7'
+                    }}>
+                      <div style={{ fontSize: 12, fontWeight: 700, color: '#264b6e', marginBottom: 8 }}>
+                        Verificar resoluciones citadas:
+                      </div>
+                      {citations.map((cite, ci) => {
+                        const links = getCitationLinks(cite)
+                        return (
+                          <div key={ci} style={{
+                            display: 'flex', alignItems: 'center', gap: 8,
+                            padding: '6px 0',
+                            borderBottom: ci < citations.length - 1 ? '1px solid #e8f0f7' : 'none'
+                          }}>
+                            <span style={{ fontSize: 13, fontWeight: 700, color: '#264b6e', minWidth: 130 }}>
+                              {cite}
+                            </span>
+                            <a
+                              href={links.dyctea}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              style={{
+                                fontSize: 11, fontWeight: 700, color: 'white',
+                                background: '#368087', borderRadius: 4,
+                                padding: '3px 10px', textDecoration: 'none',
+                                transition: 'opacity 0.2s'
+                              }}
+                            >
+                              DYCTEA
+                            </a>
+                            <a
+                              href={links.iberley}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              style={{
+                                fontSize: 11, fontWeight: 700, color: '#368087',
+                                background: 'white', border: '1px solid #368087',
+                                borderRadius: 4, padding: '3px 10px',
+                                textDecoration: 'none', transition: 'opacity 0.2s'
+                              }}
+                            >
+                              Iberley
+                            </a>
+                          </div>
+                        )
+                      })}
+                      <div style={{ fontSize: 10, color: '#8bafc8', marginTop: 8, lineHeight: 1.4 }}>
+                        Verifica siempre las resoluciones en fuentes oficiales antes de incluirlas en escritos formales.
+                      </div>
+                    </div>
+                  )}
+                  </>
+                )}
+              </div>
             </div>
-          </div>
-        ))}
+          )
+        })}
 
         {loading && (
           <div style={{ display: 'flex', justifyContent: 'flex-start' }}>

@@ -19,7 +19,7 @@ const openai = new OpenAI({
 // RAG: Búsqueda semántica en el corpus
 // ============================================
 
-async function searchCorpus(query: string, matchCount: number = 5, threshold: number = 0.7): Promise<string> {
+async function searchCorpus(query: string, matchCount: number = 5, threshold: number = 0.5): Promise<string> {
   try {
     const supabase = createServiceClient()
 
