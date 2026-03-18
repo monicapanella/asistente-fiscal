@@ -153,8 +153,8 @@ function extractCitations(text: string): string[] {
 function getCitationLinks(citation: string) {
   const encoded = encodeURIComponent(citation)
   return {
-    dyctea: `https://serviciostelematicosext.hacienda.gob.es/DYCTEA/consulta.html?NUM_RESOLUCION=${encoded}`,
-    iberley: `https://www.iberley.es/search/resoluciones?q=${encoded}`,
+    dyctea: `https://serviciostelematicosext.hacienda.gob.es/TEAC/DYCTEA/`,
+    google: `https://www.google.com/search?q=site:serviciostelematicosext.hacienda.gob.es+%22${encoded}%22`,
   }
 }
 
@@ -399,7 +399,7 @@ export default function AsistentePage() {
                               DYCTEA
                             </a>
                             <a
-                              href={links.iberley}
+                              href={links.google}
                               target="_blank"
                               rel="noopener noreferrer"
                               style={{
@@ -409,7 +409,7 @@ export default function AsistentePage() {
                                 textDecoration: 'none', transition: 'opacity 0.2s'
                               }}
                             >
-                              Iberley
+                              Buscar en Google
                             </a>
                           </div>
                         )
