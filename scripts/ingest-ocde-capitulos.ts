@@ -1,8 +1,11 @@
 // scripts/ingest-ocde-capitulos.ts
 // =====================================================================
-// RE-INGESTA SELECTIVA — Directrices OCDE PT 2022
-// Lee PDFs individuales por capítulo (I–IV, VII, X)
+// INGESTA SELECTIVA — Directrices OCDE PT 2022
+// Lee PDFs individuales por capítulo
 // Ejecutar con: npx tsx scripts/ingest-ocde-capitulos.ts
+// =====================================================================
+// MODIFICADO 20/03/2026: Añadidos caps V, VI, VIII, IX
+// Borrado por source_file (por capítulo), no por source_type (todos)
 // =====================================================================
 
 import fs from 'fs'
@@ -20,14 +23,16 @@ const SOURCE_TYPE = 'directrices_ocde'
 const SOURCE_LABEL = 'Directrices OCDE PT 2022'
 
 // Capítulos a incluir — cada uno con su archivo PDF individual
+// NOTA: Comentar los capítulos ya ingestados para no borrarlos/duplicarlos
 const CHAPTERS = [
-  {
-    number: 1,
-    roman: 'I',
-    title: 'El principio de plena competencia',
-    file: 'directrices ocde precios de transferencia 2022_extract cap I.pdf',
-    description: 'Art. 9 MCOCDE, fundamento del arm\'s length principle',
-  },
+  // ── YA INGESTADOS (I, III, IV, VII, X) — NO TOCAR ──
+  // { number: 1, roman: 'I', title: 'El principio de plena competencia', file: 'directrices ocde precios de transferencia 2022_extract cap I.pdf', description: 'Art. 9 MCOCDE, fundamento del arm\'s length principle' },
+  // { number: 3, roman: 'III', title: 'Análisis de comparabilidad', file: 'directrices ocde precios de transferencia 2022_extract cap III.pdf', description: 'Factores de comparabilidad, ajustes, selección de comparables' },
+  // { number: 4, roman: 'IV', title: 'Procedimientos administrativos para evitar y resolver controversias', file: 'directrices ocde precios de transferencia 2022_extract cap IV.pdf', description: 'APAs, procedimientos amistosos (MAP), ajustes correlativos' },
+  // { number: 7, roman: 'VII', title: 'Consideraciones especiales aplicables a los servicios intragrupo', file: 'directrices ocde precios de transferencia 2022_extract cap VII.pdf', description: 'Servicios de bajo valor añadido, test de beneficio, duplicidades' },
+  // { number: 10, roman: 'X', title: 'Aspectos de precios de transferencia de las operaciones financieras', file: 'directrices ocde precios de transferencia 2022_extract cap X.pdf', description: 'Préstamos intragrupo, cash pooling, garantías, seguros cautivos' },
+
+  // ── NUEVOS — A INGESTAR ──
   {
     number: 2,
     roman: 'II',
@@ -36,32 +41,32 @@ const CHAPTERS = [
     description: 'CUP, Precio de Reventa, Coste Incrementado, TNMM, Profit Split',
   },
   {
-    number: 3,
-    roman: 'III',
-    title: 'Análisis de comparabilidad',
-    file: 'directrices ocde precios de transferencia 2022_extract cap III.pdf',
-    description: 'Factores de comparabilidad, ajustes, selección de comparables',
+    number: 5,
+    roman: 'V',
+    title: 'Documentación',
+    file: 'directrices ocde precios de transferencia 2022_extract cap V.pdf',
+    description: 'Master File, Local File, CbCR, documentación contemporánea',
   },
   {
-    number: 4,
-    roman: 'IV',
-    title: 'Procedimientos administrativos para evitar y resolver controversias',
-    file: 'directrices ocde precios de transferencia 2022_extract cap IV.pdf',
-    description: 'APAs, procedimientos amistosos (MAP), ajustes correlativos',
+    number: 6,
+    roman: 'VI',
+    title: 'Consideraciones especiales aplicables a los activos intangibles',
+    file: 'directrices ocde precios de transferencia 2022_extract Cap VI.pdf',
+    description: 'DEMPE, HTVI, intangibles de difícil valoración, royalties',
   },
   {
-    number: 7,
-    roman: 'VII',
-    title: 'Consideraciones especiales aplicables a los servicios intragrupo',
-    file: 'directrices ocde precios de transferencia 2022_extract cap VII.pdf',
-    description: 'Servicios de bajo valor añadido, test de beneficio, duplicidades',
+    number: 8,
+    roman: 'VIII',
+    title: 'Acuerdos de reparto de costes',
+    file: 'directrices ocde precios de transferencia 2022_extract cap VIII.pdf',
+    description: 'Cost Contribution Arrangements, CCA',
   },
   {
-    number: 10,
-    roman: 'X',
-    title: 'Aspectos de precios de transferencia de las operaciones financieras',
-    file: 'directrices ocde precios de transferencia 2022_extract cap X.pdf',
-    description: 'Préstamos intragrupo, cash pooling, garantías, seguros cautivos',
+    number: 9,
+    roman: 'IX',
+    title: 'Aspectos de precios de transferencia de las reestructuraciones empresariales',
+    file: 'directrices ocde precios de transferencia 2022_extract cap IX.pdf',
+    description: 'Exit charges, conversión distribuidores, transferencia funciones/activos/riesgos',
   },
 ]
 
@@ -348,10 +353,11 @@ async function generateEmbeddings(openai: OpenAI, texts: string[]): Promise<numb
 // ============================================
 
 async function main() {
-  console.log('🚀 RE-INGESTA SELECTIVA — Directrices OCDE PT 2022')
+  console.log('🚀 INGESTA SELECTIVA — Directrices OCDE PT 2022 (caps nuevos)')
   console.log('=====================================================')
-  console.log('  Capítulos: I, II, III, IV, VII, X (PDFs individuales)')
-  console.log('  Acción: Borrar TODOS los chunks OCDE → Insertar selectivamente')
+  console.log('  Capítulos nuevos: II, V, VI, VIII, IX')
+  console.log('  Capítulos existentes: I, III, IV, VII, X (no se tocan)')
+  console.log('  Borrado: solo por source_file de cada capítulo nuevo')
   console.log('=====================================================\n')
 
   loadEnv()
@@ -363,23 +369,11 @@ async function main() {
     process.exit(1)
   }
 
-  // ── PASO 1: Borrar TODOS los chunks OCDE actuales ──
-  console.log('🗑️  Borrando TODOS los chunks de Directrices OCDE...')
-  const { error: deleteError, count: deleteCount } = await supabase
-    .from('documents')
-    .delete({ count: 'exact' })
-    .eq('source_type', 'directrices_ocde')
-
-  if (deleteError) {
-    console.error(`❌ Error al borrar: ${deleteError.message}`)
-    process.exit(1)
-  }
-  console.log(`✅ ${deleteCount || 0} chunks anteriores eliminados\n`)
-
-  // ── PASO 2: Procesar cada capítulo ──
+  // ── PASO 1: Procesar cada capítulo (borrado individual por source_file) ──
   let totalInserted = 0
   let totalChunks = 0
   let totalErrors = 0
+  let totalDeleted = 0
 
   for (const chapter of CHAPTERS) {
     const filePath = path.join(CHAPTERS_DIR, chapter.file)
@@ -392,6 +386,23 @@ async function main() {
       console.error(`   ❌ Archivo no encontrado: ${filePath}`)
       totalErrors++
       continue
+    }
+
+    // Borrar chunks existentes de ESTE capítulo (por source_file)
+    console.log(`   🗑️  Borrando chunks anteriores de Cap. ${chapter.roman}...`)
+    const { error: delErr, count: delCount } = await supabase
+      .from('documents')
+      .delete({ count: 'exact' })
+      .eq('source_file', chapter.file)
+
+    if (delErr) {
+      console.error(`   ❌ Error al borrar: ${delErr.message}`)
+      totalErrors++
+      continue
+    }
+    if (delCount && delCount > 0) {
+      console.log(`   ✅ ${delCount} chunks anteriores eliminados`)
+      totalDeleted += delCount
     }
 
     // Extraer texto del PDF del capítulo
@@ -479,18 +490,13 @@ async function main() {
   // RESUMEN
   // ============================================
   console.log('\n=====================================================')
-  console.log('📊 RESUMEN DE RE-INGESTA (Directrices OCDE)')
+  console.log('📊 RESUMEN DE INGESTA (Directrices OCDE — caps nuevos)')
   console.log('=====================================================')
-  console.log(`   Chunks eliminados (viejos):    ${deleteCount || 0}`)
+  console.log(`   Chunks eliminados (viejos):    ${totalDeleted}`)
   console.log(`   Capítulos procesados:          ${CHAPTERS.length}`)
   console.log(`   Chunks generados (nuevos):     ${totalChunks}`)
   console.log(`   Chunks insertados con éxito:   ${totalInserted}`)
   console.log(`   Errores:                       ${totalErrors}`)
-
-  if (deleteCount && deleteCount > totalInserted) {
-    const reduction = Math.round((1 - totalInserted / deleteCount) * 100)
-    console.log(`   📉 Reducción del corpus OCDE:  ~${reduction}% (${deleteCount} → ${totalInserted} chunks)`)
-  }
 
   const { count } = await supabase
     .from('documents')
