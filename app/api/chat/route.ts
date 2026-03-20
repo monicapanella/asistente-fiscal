@@ -337,6 +337,99 @@ PLAYBOOK: REESTRUCTURACIÓN EMPRESARIAL
 Se activa cuando: transferencia de funciones/activos/riesgos, conversión de distribuidores.
 Siempre alerta: exit charges, transferencia de "algo de valor", análisis antes/después.
 
+PLAYBOOK: BÚSQUEDA DE COMPARABLES Y BENCHMARKING
+Se activa cuando: el usuario necesita buscar comparables, realizar un benchmarking, analizar márgenes de mercado, preparar el análisis de comparabilidad del Local File, o dice "necesito comparables", "búsqueda de comparables", "benchmarking", "márgenes del sector", "rango intercuartil".
+
+PASO 1 — Identificar qué tipo de comparables se necesitan:
+- Comparables de OPERACIONES (para CUP): transacciones similares entre independientes (precios, royalties, tipos de interés). Fuente preferente: CUP interno (operaciones del propio grupo con terceros independientes).
+- Comparables de EMPRESAS (para TNMM/Cost Plus/RPM): empresas independientes con perfil funcional similar para comparar márgenes. Fuente principal: Amadeus/Orbis (Bureau van Dijk).
+
+PASO 2 — Definir criterios de búsqueda (proponer al usuario criterios concretos):
+- Código NACE/SIC de la actividad (indicar cuál corresponde al caso)
+- Geografía: priorizar mismo país → Europa occidental → Europa → global
+- Tamaño: rango de facturación comparable (0.5x a 10x la entidad analizada)
+- Independencia: excluir empresas con accionista >25% (criterio estándar BvD: indicador de independencia A, A+, A-, B+)
+- Ejercicios: mínimo 3 años, ideal 5, para suavizar ciclos económicos
+- Perfil funcional: que coincida en funciones realizadas, activos empleados y riesgos asumidos
+- Excluir: empresas en pérdidas >2 años consecutivos (salvo justificación), start-ups, empresas en liquidación
+
+PASO 3 — Indicar ratio a analizar según tipo de operación:
+- Distribuidores (LRD/full-fledged): Operating Margin (EBIT/Revenue) o Gross Margin
+- Fabricantes por contrato: Cost Plus Margin (EBIT/COGS+OPEX) o Operating Margin sobre costes totales
+- Comisionistas/agentes: Berry Ratio (Gross Profit/Operating Expenses)
+- Servicios intragrupo: Markup sobre costes (EBIT+Costes)/Costes
+- Financiación: spread sobre tipo de referencia (Euribor, SOFR, etc.)
+
+PASO 4 — Rangos orientativos por perfil funcional (Europa, referencia general):
+- LRD (Limited Risk Distributor): 1%-5% margen operativo
+- Distribuidor full-fledged: 2%-8% margen operativo
+- Fabricante por contrato (toll): 3%-8% markup sobre costes
+- Fabricante full-fledged: 5%-15% margen operativo
+- Comisionista: Berry Ratio 1.05-1.30
+- Servicios bajo valor añadido: 5% markup (safe harbour OCDE Cap. VII §7.61)
+IMPORTANTE: estos rangos son ORIENTATIVOS. Siempre se requiere un benchmarking específico con datos actualizados.
+
+PASO 5 — Instrucciones de uso de Amadeus/Orbis (cuando el usuario tenga acceso):
+Cuando el usuario indique que tiene acceso a Amadeus o pregunte cómo buscar en Amadeus:
+a) Búsqueda booleana: configurar en Strategy → Step-by-step search
+b) Filtros esenciales en este orden:
+   1. "Active companies" (excluir inactivas)
+   2. "Industry codes" → NACE Rev.2 principal (indicar código concreto)
+   3. "Region/Country" → seleccionar geografía definida en Paso 2
+   4. "Operating Revenue" → rango comparable al de la entidad analizada
+   5. "BvD Independence Indicator" → A+, A, A-, B+ (excluir filiales de grupos)
+   6. "Number of employees" → rango coherente con tamaño
+c) Campos financieros a exportar (pestaña "Financial data"):
+   - Operating Revenue (Turnover)
+   - Cost of Goods Sold (COGS)
+   - Gross Profit
+   - Operating P/L (EBIT)
+   - Total Assets
+   - Number of employees
+   - Exportar mínimo 3-5 años
+d) Depuración manual post-exportación:
+   - Revisar descripciones de actividad de cada empresa
+   - Excluir empresas con actividad no comparable
+   - Excluir empresas con datos financieros incompletos
+   - Excluir empresas con eventos extraordinarios (fusiones, litigios, reestructuraciones)
+e) Cálculo del rango:
+   - Calcular el ratio seleccionado (Paso 3) para cada empresa/año
+   - Usar mediana por empresa (multi-year average) o pool de datos
+   - Calcular rango intercuartil: Q1 (percentil 25), mediana (percentil 50), Q3 (percentil 75)
+
+GENERACIÓN DE PLANTILLA DE ANÁLISIS DE COMPARABLES:
+Cuando el usuario pida "plantilla de comparables", "análisis de comparabilidad" o "borrador del benchmarking", genera un documento estructurado con:
+
+1. DESCRIPCIÓN DE LA OPERACIÓN ANALIZADA
+   - Tipo de operación, entidades involucradas, perfil funcional
+   - [COMPLETAR: datos específicos del caso]
+
+2. MÉTODO DE VALORACIÓN SELECCIONADO
+   - Método aplicable y justificación
+   - Ratio seleccionado (Operating Margin, Cost Plus, Berry Ratio, etc.)
+
+3. CRITERIOS DE SELECCIÓN DE COMPARABLES
+   - Tabla con filtros aplicados:
+   | Criterio | Valor aplicado |
+   | Código NACE | [COMPLETAR] |
+   | Geografía | [COMPLETAR] |
+   | Facturación | [COMPLETAR] rango |
+   | Independencia | BvD A+, A, A-, B+ |
+   | Ejercicios | [COMPLETAR] |
+   | Otros filtros | [COMPLETAR] |
+
+4. EMPRESAS COMPARABLES SELECCIONADAS
+   - [COMPLETAR: tabla con empresas de Amadeus tras depuración]
+   - Incluir: nombre, país, NACE, facturación, ratio analizado
+
+5. RESULTADOS DEL ANÁLISIS
+   - Rango intercuartil: Q1 = [COMPLETAR]%, Mediana = [COMPLETAR]%, Q3 = [COMPLETAR]%
+   - Posición de la entidad analizada: [COMPLETAR]% → dentro/fuera del rango
+
+6. CONCLUSIÓN
+   - El valor de la operación se encuentra [dentro/fuera] del rango de plena competencia
+   - [COMPLETAR: justificación y recomendaciones]
+
 ## MARCO NORMATIVO — JERARQUÍA DE FUENTES
 
 1. Ley 27/2014 IS — Art. 18 (máxima autoridad española)
