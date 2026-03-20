@@ -72,6 +72,124 @@ async function searchCorpus(query: string, matchCount: number = 5, threshold: nu
 }
 
 // ============================================
+// NUEVO: Recuperar resoluciones TEAC verificadas
+// ============================================
+
+interface VerifiedCitation {
+  resolution_number: string
+  resolution_date: string
+  subject: string
+  body: string
+  status: string
+  keywords: string[]
+  dyctea_url: string | null
+  doctrinal_block: string | null
+  block_section: string | null
+}
+
+async function getRelevantCitations(query: string): Promise<VerifiedCitation[]> {
+  try {
+    const supabase = createServiceClient()
+
+    // Recuperar TODAS las resoluciones verificadas (son pocas, ~10-50)
+    const { data, error } = await supabase
+      .from('verified_citations')
+      .select('resolution_number, resolution_date, subject, body, status, keywords, dyctea_url, doctrinal_block, block_section')
+      .eq('status', 'VERIFICADA')
+
+    if (error) {
+      console.error('Error recuperando verified_citations:', error)
+      return []
+    }
+
+    if (!data || data.length === 0) {
+      return []
+    }
+
+    // Filtrar por relevancia: comparar keywords de cada resolución con la consulta
+    const queryLower = query.toLowerCase()
+    const queryWords = queryLower.split(/\s+/).filter(w => w.length > 3)
+
+    const scored = data.map((citation: VerifiedCitation) => {
+      let score = 0
+
+      // Buscar coincidencias en keywords
+      if (citation.keywords && Array.isArray(citation.keywords)) {
+        for (const keyword of citation.keywords) {
+          const kwLower = keyword.toLowerCase()
+          if (queryLower.includes(kwLower)) {
+            score += 3 // Coincidencia exacta de keyword en la consulta
+          } else {
+            // Coincidencia parcial: alguna palabra de la consulta en el keyword
+            for (const qw of queryWords) {
+              if (kwLower.includes(qw) || qw.includes(kwLower)) {
+                score += 1
+              }
+            }
+          }
+        }
+      }
+
+      // Buscar coincidencias en subject
+      if (citation.subject) {
+        const subjectLower = citation.subject.toLowerCase()
+        for (const qw of queryWords) {
+          if (subjectLower.includes(qw)) {
+            score += 1
+          }
+        }
+      }
+
+      // Buscar coincidencias en body (criterio TEAC)
+      if (citation.body) {
+        const bodyLower = citation.body.toLowerCase()
+        for (const qw of queryWords) {
+          if (bodyLower.includes(qw)) {
+            score += 0.5
+          }
+        }
+      }
+
+      return { ...citation, relevanceScore: score }
+    })
+
+    // Devolver solo las que tienen alguna relevancia, ordenadas por score
+    const relevant = scored
+      .filter((c: { relevanceScore: number }) => c.relevanceScore > 0)
+      .sort((a: { relevanceScore: number }, b: { relevanceScore: number }) => b.relevanceScore - a.relevanceScore)
+      .slice(0, 5) // Máximo 5 resoluciones por consulta
+
+    console.log(`📋 Resoluciones verificadas relevantes: ${relevant.length} de ${data.length} total`)
+    if (relevant.length > 0) {
+      console.log(`   → ${relevant.map((c: VerifiedCitation & { relevanceScore: number }) => `${c.resolution_number} (score: ${c.relevanceScore})`).join(', ')}`)
+    }
+
+    return relevant
+  } catch (err) {
+    console.error('Error en getRelevantCitations:', err)
+    return []
+  }
+}
+
+function formatCitationsAsContext(citations: VerifiedCitation[]): string {
+  if (citations.length === 0) return ''
+
+  const parts = citations.map(c => {
+    const lines = [
+      `[RESOLUCIÓN VERIFICADA · ${c.resolution_number} · ${c.resolution_date}]`,
+      `Materia: ${c.subject}`,
+      `Criterio TEAC: ${c.body}`,
+    ]
+    if (c.dyctea_url) {
+      lines.push(`URL DYCTEA: ${c.dyctea_url}`)
+    }
+    return lines.join('\n')
+  })
+
+  return parts.join('\n\n---\n\n')
+}
+
+// ============================================
 // POST-PROCESSING: Verificación de citas
 // ============================================
 
@@ -140,88 +258,8 @@ function formatCitationReport(verificationResults: {
 }
 
 // ============================================
-// SYSTEM PROMPT Y MAPA DOCTRINAL
+// SYSTEM PROMPT (sin Mapa Doctrinal hardcodeado)
 // ============================================
-
-const MAPA_DOCTRINAL = `
-(1) Citar resoluciones TEAC con número exacto cuando el criterio está VERIFICADO.
-(2) Razonar sobre doctrina consolidada sin citar número cuando el criterio es CONSOLIDADO.
-(3) Alertar cuando una resolución figura como SUPERADA para no citar doctrina obsoleta.
-VERIFICADA
-Resolución con número TEAC confirmado extraída directamente de DYCTEA. Citable con número exacto.
-CONSOLIDADA
-Criterio conocido y aplicado por el TEAC pero sin número de resolución confirmado. El asistente razona sobre él sin citar número.
-SUPERADA
-Criterio que el TEAC ha modificado expresamente. El asistente no la cita como doctrina vigente.
-BLOQUE 1 · PRÉSTAMOS INTRAGRUPO Y FINANCIACIÓN
-Normativa de referencia: Art. 18 LIS · Art. 17 RD 634/2015 · Capítulo X Directrices OCDE 2022
-1.1 · Cash pooling y tipo de interés de plena competencia
-[VERIFICADA · 00/04821/2022 · 20/10/2025] Cash pooling: la calificación crediticia de la entidad debe analizarse caso a caso. La STS de 15/07/2015 avala la regularización cuando no se acredita el valor de mercado. No es admisible la asimetría en el tratamiento de operaciones acreedoras y deudoras en el cash pooling. Valoración a precio de mercado de tipos de interés según participación en el sistema de centralización de tesorería del grupo.
-[VERIFICADA · 00/08283/2020 · 28/11/2023] Precios de transferencia; gastos financieros; calificación crediticia de entidad integrada en el grupo. Deben considerarse los factores del Capítulo X OCDE sobre transacciones financieras: apoyo implícito del grupo, rating individual vs. grupal, condiciones del mercado. Análisis caso por caso.
-[CONSOLIDADA] El tipo de interés de plena competencia en préstamos intragrupo debe determinarse preferentemente por el método CUP, usando como comparable el tipo que la entidad prestataria habría obtenido de terceros independientes en condiciones similares. El tipo Euribor más spread es un punto de partida válido pero no suficiente sin análisis de comparabilidad.
-[CONSOLIDADA] En operaciones de financiación intragrupo, la carga de la prueba recae sobre el contribuyente para acreditar que el tipo pactado es de mercado. La mera referencia al Euribor sin análisis funcional del prestatario no es suficiente documentación.
-1.2 · Calificación crediticia y apoyo implícito del grupo
-[CONSOLIDADA] Para determinar la calificación crediticia de una entidad del grupo a efectos PT, debe distinguirse entre el rating individual (standalone) y el rating grupal (con apoyo implícito). El Capítulo X OCDE 2022 establece que el apoyo implícito del grupo puede incrementar la calificación pero no de forma automática ni ilimitada.
-[CONSOLIDADA] La AEAT puede regularizar el tipo de interés de un préstamo intragrupo si el contribuyente no acredita que el tipo pactado refleja las condiciones que habrían acordado partes independientes. La regularización debe incluir el ajuste correlativo en la entidad prestamista.
-BLOQUE 2 · SERVICIOS INTRAGRUPO Y MANAGEMENT FEES
-Normativa de referencia: Art. 18 LIS · Art. 16 RD 634/2015 · Cap. VII Directrices OCDE 2022
-2.1 · Test del beneficio y deducibilidad
-[CONSOLIDADA] Para que un servicio intragrupo sea deducible, debe superar el test del beneficio (benefit test): la entidad receptora debe haber obtenido un beneficio económico real y razonablemente esperado por un tercero independiente en condiciones comparables. Los servicios de accionista (shareholder activities) no son deducibles.
-[CONSOLIDADA] Los management fees son deducibles si se acredita: (1) que el servicio se ha prestado efectivamente, (2) que genera un beneficio económico identificable para el receptor, y (3) que el precio es de mercado. La AEAT exige documentación de la prestación efectiva, no solo el contrato.
-[CONSOLIDADA] Los servicios duplicados (duplicated services) — prestados tanto por la matriz como por recursos propios de la filial — no son deducibles en su totalidad. Solo es deducible la parte que no reproduce funciones ya existentes en la entidad receptora.
-2.2 · Métodos de valoración en servicios
-[CONSOLIDADA] En servicios intragrupo de bajo valor añadido, el método del coste incrementado con margen del 5% es el criterio de la OCDE (Cap. VII, Sección D) y es aceptado por el TEAC como método de valoración simplificado para servicios rutinarios. No aplica a servicios con intangibles valiosos.
-[CONSOLIDADA] Para servicios de alto valor añadido (dirección estratégica, I+D, intangibles), el método del margen neto transaccional (TNMM) sobre costes es el más utilizado en la práctica española. El TEAC acepta su aplicación cuando el análisis funcional está debidamente documentado.
-BLOQUE 3 · DOCUMENTACIÓN Y OBLIGACIONES FORMALES
-Normativa de referencia: Art. 18.3 LIS · Arts. 13-16 RD 634/2015
-3.1 · Contenido mínimo del Local File
-[CONSOLIDADA] La documentación específica de la entidad (Local File) debe contener como mínimo: descripción de las operaciones vinculadas, análisis funcional y de riesgos, método de valoración seleccionado con justificación, análisis de comparabilidad con comparables identificados, y resultado del rango de plena competencia. La ausencia de cualquiera de estos elementos es suficiente para considerar la documentación insuficiente.
-[CONSOLIDADA] El TEAC ha establecido que la documentación debe estar disponible en el momento en que se realizan las operaciones, no solo cuando la AEAT la requiere. La elaboración ex post de la documentación no subsana la infracción formal, aunque puede reducir la sanción.
-3.2 · Carga de la prueba
-[CONSOLIDADA] Una vez la AEAT acredita la existencia de operaciones vinculadas, la carga de probar que el valor pactado es de mercado recae sobre el contribuyente. Si la documentación es insuficiente o inexistente, la Administración puede valorar las operaciones por cualquier método, sin quedar vinculada al propuesto por el contribuyente.
-[CONSOLIDADA] La documentación PT correctamente elaborada invierte la carga de la prueba: la AEAT debe entonces demostrar que el método del contribuyente es incorrecto o que los comparables son inadecuados. Este principio es reiteradamente aplicado por el TEAC en resoluciones de inspección.
-BLOQUE 4 · AJUSTES Y CORRECCIONES VALORATIVAS
-Normativa de referencia: Art. 18.1 y 18.10 LIS · Art. 20 RD 634/2015
-4.1 · Ajuste primario y correlativo
-[CONSOLIDADA] Cuando la AEAT practica un ajuste primario en la entidad pagadora (aumenta el beneficio imponible), debe practicar simultáneamente el ajuste correlativo en la entidad perceptora (reduce su beneficio imponible por el mismo importe). La falta de ajuste correlativo es motivo de impugnación ante el TEAC.
-[CONSOLIDADA] El ajuste valorativo debe calcularse sobre la diferencia entre el valor pactado y el valor de mercado determinado por la AEAT, no sobre el importe total de la operación. El TEAC ha anulado liquidaciones donde la AEAT aplicó el ajuste sobre la base total sin respetar este principio.
-4.2 · Rango de plena competencia
-[CONSOLIDADA] Si el valor pactado se encuentra dentro del rango intercuartílico de plena competencia, la AEAT no puede practicar ajuste. Solo cuando el valor queda fuera del rango procede el ajuste, y este debe llevarse a la mediana del rango (no al extremo más favorable para la Administración). Criterio alineado con Cap. III Directrices OCDE.
-BLOQUE 5 · RÉGIMEN SANCIONADOR PT
-Normativa de referencia: Art. 18.13 LIS · Arts. 191-206 LGT
-5.1 · Infracciones específicas PT
-[CONSOLIDADA] El Art. 18.13 LIS establece un régimen sancionador específico para PT con tres infracciones: (1) no aportar documentación o aportarla con datos falsos, (2) operaciones con valor de mercado distinto al declarado, y (3) falta de declaración informativa (modelo 232). Las sanciones son independientes entre sí y acumulables.
-[CONSOLIDADA] El TEAC ha establecido que la sanción por documentación insuficiente en PT (Art. 18.13.a LIS) requiere acreditar la culpabilidad del contribuyente. La mera insuficiencia formal de la documentación, sin ocultación ni falsedad, puede no ser sancionable si existe interpretación razonable de la norma.
-5.2 · Reducción de sanciones
-[CONSOLIDADA] Las reducciones generales de la LGT (30% por conformidad, 25% por ingreso en período voluntario) son aplicables también a las sanciones PT del Art. 18.13 LIS. El TEAC ha confirmado que no existe especialidad que excluya estas reducciones en el régimen PT.
-BLOQUE 6 · COMMODITIES Y OPERACIONES DE TRADING
-Normativa de referencia: Art. 18 LIS · Directrices OCDE 2022 párrafos 2.18-2.22 · Acciones BEPS 8-10
-6.1 · Método CUP para commodities
-[CONSOLIDADA] Las Directrices OCDE 2022 (actualización BEPS Acciones 8-10) ratifican que el CUP es generalmente el método más apropiado para establecer el precio de plena competencia en transacciones de materias primas (commodities). Cuando existen cotizaciones públicas fiables, el CUP debe ser el método preferente.
-[CONSOLIDADA] Para aplicar el CUP en commodities, deben realizarse ajustes de comparabilidad por: calidad del producto (contenido en azufre, HGI, poder calorífico), incoterms (FOB/CIF/CFR), volumen de carga, fecha de fijación del precio (pricing date contractual), y primas o descuentos habituales del mercado.
-[CONSOLIDADA] La fecha de cotización contractualmente fijada por las partes es determinante en transacciones de commodities. Refleja las circunstancias económicas y los riesgos asumidos. La Administración no puede prescindir de esta fecha sin cuestionar previamente que refleje la conducta real de las partes. Criterio respaldado por Directrices OCDE párrafo 2.18 y jurisprudencia comparada (Tribunal Fiscal Perú, Res. 00962-3-2022).
-6.2 · Fuentes de cotización aceptables
-[CONSOLIDADA] Las principales fuentes de cotización para CUP en commodities energéticos son: Argus Media (índice FOB USGC 6.5% S para petcoke), S&P Global Platts (índices API 2 y API 4 para carbón), Pace Petroleum Coke Quarterly (Advisian), ChemAnalyst y Procurement Resource (índices regionales). Para metales: London Metal Exchange (LME). Para productos agrícolas: Chicago Board of Trade (CBOT).
-[CONSOLIDADA] Cuando el producto específico no tiene cotización directa (ej: Flexicoke), es aceptable usar como proxy la cotización del producto más similar (ej: Petcoke de alto azufre) con ajustes documentados por diferencias de calidad (HGI, azufre, cenizas, poder calorífico).
-6.3 · Sexto método y sustancia del intermediario
-[CONSOLIDADA] En jurisdicciones latinoamericanas (Argentina, Uruguay, Brasil, Perú, Ecuador), el llamado "sexto método" usa el precio de cotización del día de embarque como referencia para commodities, prescindiendo del precio contractual cuando el intermediario carece de sustancia económica. Aunque España no aplica formalmente este método, la AEAT puede cuestionar la sustancia del trader si no se documentan: empleados dedicados, oficinas reales, toma de decisiones efectiva, y riesgo genuinamente asumido.
-6.4 · Traders y buy-sell entities
-[CONSOLIDADA] Una entidad que actúa como trader (buy-sell) de commodities sin transformación del producto se caracteriza funcionalmente por: gestión de aprovisionamiento, logística marítima, riesgo de precio, financiación de inventario en tránsito. Los métodos aplicables son, por orden de preferencia: CUP con cotizaciones de mercado, RPM (método del precio de reventa) con márgenes brutos de distribuidores comparables, o TNMM con margen operativo o Berry Ratio.
-[CONSOLIDADA] Si el trader también realiza ventas a terceros independientes, esos precios constituyen un CUP interno, que las Directrices OCDE consideran preferible al CUP externo basado en cotizaciones. Debe investigarse siempre esta posibilidad antes de recurrir a comparables externos.
-BLOQUE 7 · NORMATIVA MULTIJURISDICCIONAL DE REFERENCIA
-Nota: Este bloque contiene referencias normativas de jurisdicciones frecuentes en operaciones vinculadas con España. No sustituye el asesoramiento local en cada jurisdicción.
-7.1 · México
-Normativa: Arts. 76 (IX, X, XII), 179 y 180 LISR. Jerarquía de métodos ESTRICTA: CUP obligatorio como primer método (Art. 180 LISR). Solo se puede usar otro si el CUP no es apropiado. Rango intercuartílico obligatorio. Desde 2022: información financiera de comparables del ejercicio contemporáneo. El SAT exige ajuste por riesgo país con comparables de economías desarrolladas. Local File antes del 15 de mayo. CDI con España vigente (incluye MAP).
-7.2 · Marruecos
-Normativa: Arts. 213(II) y 214(III) CGI. Sin jerarquía formal de métodos. DGI acepta CUP, RPM, Cost Plus y TNMM. Umbral documentación: facturación >= 50M MAD (~4,5M EUR) o activos >= 50M MAD. Master File + Local File. Plazo: 30 días tras requerimiento. Sanción: 0,5% de transacciones no documentadas. Presunción de vinculación si no responde en 30 días. Benchmark anual obligatorio. APA disponibles desde 2015. CDI con España (firmado 10/07/1978).
-7.3 · Portugal
-Normativa: Art. 63 Código IRC. Portaria 1446-C/2001. Documentación obligatoria para operaciones >100.000 EUR con misma entidad. Preferencia por métodos transaccionales tradicionales. CDI con España (26/10/1993).
-7.4 · Reino Unido
-Normativa: TIOPA 2010, Part 4. Sin jerarquía formal — "most appropriate method". Diverted Profits Tax del 25% si hay desvío de beneficios. Documentación recomendada por HMRC pero no obligatoria por ley. CDI con España (14/03/2013).
-7.5 · Estados Unidos
-Normativa: IRC Section 482. Treasury Regulations 1.482-1 a 1.482-9. "Best Method Rule" — sin jerarquía fija. Penalización 20%-40% sin documentación contemporánea. APA program muy desarrollado. CDI con España (22/02/1990).
-ℹ Documento generado en Marzo 2026. Actualizar cuando se incorporen nuevas resoluciones de DYCTEA o cuando el TEAC modifique criterios existentes.
-`
 
 const SYSTEM_PROMPT = `Eres el Asistente IA de Precios de Transferencia de Picas de la Rosa & Asociados, un despacho fiscal español especializado en fiscalidad con práctica en precios de transferencia.
 
@@ -311,27 +349,36 @@ Siempre alerta: exit charges, transferencia de "algo de valor", análisis antes/
 
 Cuando cites, indica siempre la fuente concreta: artículo y párrafo, resolución con fecha y número, párrafo de Directrices OCDE. No cites de forma genérica.
 
-## CORPUS DOCTRINAL DE REFERENCIA
+## TABLA DE UMBRALES DE DOCUMENTACIÓN PT
 
-El siguiente Mapa Doctrinal contiene la doctrina TEAC verificada y consolidada del despacho. Úsalo como base para todas tus respuestas sobre doctrina administrativa:
+| INCN grupo | Obligación documentación | Base legal |
+|---|---|---|
+| < 45M EUR | SIMPLIFICADA (contenido reducido) | Art. 16.4 RD 634/2015 |
+| >= 45M EUR | COMPLETA (Master File + Local File + CbCR si >= 750M) | Arts. 15-16 RD 634/2015 |
 
-${MAPA_DOCTRINAL}
+IMPORTANTE: El umbral de 45M EUR se refiere al importe neto de la cifra de negocios (INCN) del grupo. No confundir con el volumen de operaciones vinculadas.
 
-## PROTOCOLO DE CITACIÓN DE RESOLUCIONES TEAC
+## REGLAS NUMÉRICAS CRÍTICAS
 
-REGLA 1 — SOLO CITAS VERIFICADAS CON NÚMERO
-Nunca generes un número de resolución TEAC por inferencia o memoria. Solo cita resoluciones con número exacto cuando estén marcadas como VERIFICADA en el Mapa Doctrinal. Para doctrina marcada como CONSOLIDADA, razona sobre el criterio sin incluir número.
+- Plazo para contestar requerimiento de información de Inspección: 10 DÍAS HÁBILES (Art. 93.1 LGT). NO 2 meses.
+- Rango intercuartil: si el valor del contribuyente está DENTRO del rango, la AEAT NO puede ajustar. Si está FUERA, el ajuste va al punto del rango más cercano al valor del contribuyente, generalmente la mediana. PERO: el TEAC ha establecido que sin defectos de comparabilidad acreditados, el ajuste a la mediana es improcedente — debe ir al extremo del rango más cercano (Q1 o Q3).
+- Art. 89 LIS (régimen FEAC): el apartado 89.1 es la norma general de aplicación del régimen; el apartado 89.2 es la cláusula antiabuso. La inaplicación parcial (solo a efectos abusivos) está en el 89.2, no en el 89.1.
+- Arts. 13-14 RD 634/2015: obligaciones generales de documentación e información país por país. Arts. 15-16 RD 634/2015: Master File y Local File. No confundir.
 
-REGLA 2 — ETIQUETAS OBLIGATORIAS
-Usa siempre las etiquetas [VERIFICADA] o [CONSOLIDADA] junto a cada cita doctrinal.
+## USO DE RESOLUCIONES TEAC VERIFICADAS
 
-REGLA 3 — ADVERTENCIA EN ESCRITOS FORMALES
-Cuando detectes que el usuario está redactando un recurso, alegación o escrito dirigido a la AEAT o tribunal:
-⚠️ VERIFICACIÓN RECOMENDADA: Las resoluciones [VERIFICADA] tienen número confirmado. Las [CONSOLIDADA] reflejan criterio conocido sin número confirmado — no las incluyas en escritos formales sin verificación previa en DYCTEA.
+REGLA FUNDAMENTAL: En cada consulta recibirás, junto con el contexto normativo del corpus, un bloque de RESOLUCIONES TEAC VERIFICADAS seleccionadas por relevancia. Estas resoluciones tienen número de RG confirmado y criterio extraído directamente de DYCTEA.
 
-REGLA 4 — PROHIBICIÓN DE INVENTAR
-Si el usuario proporciona un número de resolución incompleto o aproximado, no lo completes ni corrijas. Indícale que verifique en DYCTEA.
-Nunca inventes resoluciones, datos de comparables, cifras financieras ni cotizaciones de mercado.
+INSTRUCCIÓN: Cuando una resolución verificada sea relevante para tu análisis:
+1. CITA SIEMPRE el número de RG completo (formato 00/XXXXX/YYYY)
+2. INDICA la fecha de la resolución
+3. RESUME el criterio aplicable al caso concreto
+4. USA la etiqueta [VERIFICADA] junto a la cita
+5. Si la resolución tiene URL de DYCTEA, menciónala para que el usuario pueda verificar
+
+Para doctrina que conozcas pero que NO aparezca en las resoluciones verificadas inyectadas, usa la etiqueta [CONSOLIDADA] y razona sobre el criterio sin inventar números de resolución.
+
+PROHIBICIÓN ABSOLUTA: Nunca inventes un número de resolución TEAC. Si no lo ves en el contexto de resoluciones verificadas, no lo cites con número.
 
 ## PROTOCOLO PARA DOCUMENTOS ADJUNTOS
 
@@ -384,17 +431,40 @@ export async function POST(request: NextRequest) {
   try {
     const { message, history } = await request.json()
 
-    // PASO 1: Buscar contexto relevante en el corpus (RAG)
+    // PASO 1: Buscar contexto relevante en el corpus (RAG semántico)
     console.log('🔍 Buscando contexto en el corpus...')
     const ragContext = await searchCorpus(message)
 
-    // PASO 2: Construir el mensaje con contexto RAG inyectado
+    // PASO 1.5: Recuperar resoluciones TEAC verificadas relevantes
+    console.log('📋 Buscando resoluciones TEAC verificadas...')
+    const relevantCitations = await getRelevantCitations(message)
+    const citationsContext = formatCitationsAsContext(relevantCitations)
+
+    // PASO 2: Construir el mensaje con contexto RAG + resoluciones verificadas
     let userMessageWithContext = message
+
+    const contextBlocks: string[] = []
+
     if (ragContext) {
-      userMessageWithContext = `${message}\n\n---\n\n**[CONTEXTO NORMATIVO RECUPERADO DEL CORPUS — usa esta información para fundamentar tu respuesta, pero no la copies literalmente. Cita las fuentes originales (artículo, párrafo, resolución):]**\n\n${ragContext}`
+      contextBlocks.push(
+        `**[CONTEXTO NORMATIVO DEL CORPUS — usa esta información para fundamentar tu respuesta, citando las fuentes originales (artículo, párrafo, resolución):]**\n\n${ragContext}`
+      )
       console.log(`✅ Contexto RAG añadido (${ragContext.length} caracteres)`)
     } else {
       console.log('ℹ️ Sin contexto RAG relevante para esta consulta')
+    }
+
+    if (citationsContext) {
+      contextBlocks.push(
+        `**[RESOLUCIONES TEAC VERIFICADAS — estas resoluciones tienen número de RG confirmado en DYCTEA. Cítalas con su número cuando sean relevantes para tu análisis:]**\n\n${citationsContext}`
+      )
+      console.log(`✅ Resoluciones verificadas añadidas (${relevantCitations.length} resoluciones)`)
+    } else {
+      console.log('ℹ️ Sin resoluciones verificadas relevantes para esta consulta')
+    }
+
+    if (contextBlocks.length > 0) {
+      userMessageWithContext = `${message}\n\n---\n\n${contextBlocks.join('\n\n---\n\n')}`
     }
 
     // PASO 3: Preparar mensajes para Claude
@@ -422,8 +492,8 @@ export async function POST(request: NextRequest) {
 
     let responseText = content.text
 
-    // PASO 5: Post-processing — verificar citas
-    console.log('🔍 Verificando citas...')
+    // PASO 5: Post-processing — verificar citas (capa de seguridad)
+    console.log('🔍 Verificando citas en la respuesta...')
     const citationNumbers = extractCitationNumbers(responseText)
     
     if (citationNumbers.length > 0) {
