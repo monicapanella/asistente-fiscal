@@ -59,6 +59,7 @@ async function searchCorpus(query: string, matchCount: number = 5, threshold: nu
         'reglamento': 'RD 634/2015',
         'directrices_ocde': 'Directrices OCDE PT 2022',
         'modulo_casos_complejos': 'Módulo Casos Complejos PT',
+        'lgt': 'Ley 58/2003 General Tributaria',
       }[doc.source_type] || doc.source_file
 
       return `[Fuente ${i + 1}: ${sourceLabel}${doc.title ? ' — ' + doc.title : ''} (similitud: ${(doc.similarity * 100).toFixed(0)}%)]\n${doc.content}`
