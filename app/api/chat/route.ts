@@ -43,8 +43,15 @@ async function searchCorpus(query: string, matchCount: number = 5, threshold: nu
     }
 
     if (!data || data.length === 0) {
+      console.log('📊 RAG: 0 chunks encontrados por encima del umbral')
       return ''
     }
+
+    // LOG de diagnóstico RAG (para afinar umbral)
+    console.log(`📊 RAG: ${data.length} chunks encontrados`)
+    data.forEach((doc: { source_type: string; title: string | null; similarity: number }, i: number) => {
+      console.log(`   [${i + 1}] ${doc.source_type}${doc.title ? ' — ' + doc.title : ''} → similitud: ${(doc.similarity * 100).toFixed(1)}%`)
+    })
 
     // 3. Formatear los resultados como contexto para Claude
     const contextParts = data.map((doc: {
@@ -73,7 +80,7 @@ async function searchCorpus(query: string, matchCount: number = 5, threshold: nu
 }
 
 // ============================================
-// NUEVO: Recuperar resoluciones TEAC verificadas
+// Recuperar doctrina verificada (TEAC + DGT)
 // ============================================
 
 interface VerifiedCitation {
@@ -86,6 +93,7 @@ interface VerifiedCitation {
   dyctea_url: string | null
   doctrinal_block: string | null
   block_section: string | null
+  source: string // 'TEAC' | 'DGT'
 }
 
 async function getRelevantCitations(query: string): Promise<VerifiedCitation[]> {
@@ -95,7 +103,7 @@ async function getRelevantCitations(query: string): Promise<VerifiedCitation[]> 
     // Recuperar TODAS las resoluciones verificadas (son pocas, ~10-50)
     const { data, error } = await supabase
       .from('verified_citations')
-      .select('resolution_number, resolution_date, subject, body, status, keywords, dyctea_url, doctrinal_block, block_section')
+      .select('resolution_number, resolution_date, subject, body, status, keywords, dyctea_url, doctrinal_block, block_section, source')
       .eq('status', 'VERIFICADA')
 
     if (error) {
@@ -176,13 +184,14 @@ function formatCitationsAsContext(citations: VerifiedCitation[]): string {
   if (citations.length === 0) return ''
 
   const parts = citations.map(c => {
+    const sourceLabel = c.source === 'DGT' ? 'CONSULTA VINCULANTE DGT' : 'RESOLUCIÓN TEAC'
     const lines = [
-      `[RESOLUCIÓN VERIFICADA · ${c.resolution_number} · ${c.resolution_date}]`,
+      `[${sourceLabel} VERIFICADA · ${c.resolution_number} · ${c.resolution_date}]`,
       `Materia: ${c.subject}`,
-      `Criterio TEAC: ${c.body}`,
+      `Criterio: ${c.body}`,
     ]
     if (c.dyctea_url) {
-      lines.push(`URL DYCTEA: ${c.dyctea_url}`)
+      lines.push(`URL verificación: ${c.dyctea_url}`)
     }
     return lines.join('\n')
   })
@@ -459,16 +468,19 @@ IMPORTANTE: El umbral de 45M EUR se refiere al importe neto de la cifra de negoc
 - Art. 89 LIS (régimen FEAC): el apartado 89.1 es la norma general de aplicación del régimen; el apartado 89.2 es la cláusula antiabuso. La inaplicación parcial (solo a efectos abusivos) está en el 89.2, no en el 89.1.
 - Arts. 13-14 RD 634/2015: obligaciones generales de documentación e información país por país. Arts. 15-16 RD 634/2015: Master File y Local File. No confundir.
 
-## USO DE RESOLUCIONES TEAC VERIFICADAS
+## USO DE DOCTRINA ADMINISTRATIVA VERIFICADA (TEAC + DGT)
 
-REGLA FUNDAMENTAL: En cada consulta recibirás, junto con el contexto normativo del corpus, un bloque de RESOLUCIONES TEAC VERIFICADAS seleccionadas por relevancia. Estas resoluciones tienen número de RG confirmado y criterio extraído directamente de DYCTEA.
+REGLA FUNDAMENTAL: En cada consulta recibirás, junto con el contexto normativo del corpus, un bloque de DOCTRINA ADMINISTRATIVA VERIFICADA seleccionada por relevancia. Incluye:
+- RESOLUCIONES TEAC: con número de RG confirmado y criterio extraído de DYCTEA.
+- CONSULTAS VINCULANTES DGT: con número de consulta confirmado y criterio extraído del buscador oficial (PETETE).
 
-INSTRUCCIÓN: Cuando una resolución verificada sea relevante para tu análisis:
-1. CITA SIEMPRE el número de RG completo (formato 00/XXXXX/YYYY)
-2. INDICA la fecha de la resolución
+INSTRUCCIÓN: Cuando una resolución TEAC o consulta DGT verificada sea relevante para tu análisis:
+1. CITA SIEMPRE el número completo (formato 00/XXXXX/YYYY para TEAC, VXXXX-XX para DGT)
+2. INDICA la fecha de la resolución o consulta
 3. RESUME el criterio aplicable al caso concreto
 4. USA la etiqueta [VERIFICADA] junto a la cita
-5. Si la resolución tiene URL de DYCTEA, menciónala para que el usuario pueda verificar
+5. Si tiene URL de verificación, menciónala para que el usuario pueda verificar
+6. DIFERENCIA entre doctrina TEAC (vinculante para órganos económico-administrativos) y doctrina DGT (vinculante para órganos de aplicación de tributos, no para tribunales económico-administrativos)
 
 Para doctrina que conozcas pero que NO aparezca en las resoluciones verificadas inyectadas, usa la etiqueta [CONSOLIDADA] y razona sobre el criterio sin inventar números de resolución.
 
@@ -583,11 +595,11 @@ export async function POST(request: NextRequest) {
 
     if (citationsContext) {
       contextBlocks.push(
-        `**[RESOLUCIONES TEAC VERIFICADAS — estas resoluciones tienen número de RG confirmado en DYCTEA. Cítalas con su número cuando sean relevantes para tu análisis:]**\n\n${citationsContext}`
+        `**[DOCTRINA ADMINISTRATIVA VERIFICADA (TEAC + DGT) — estas resoluciones y consultas tienen número confirmado. Cítalas cuando sean relevantes para tu análisis:]**\n\n${citationsContext}`
       )
-      console.log(`✅ Resoluciones verificadas añadidas (${relevantCitations.length} resoluciones)`)
+      console.log(`✅ Doctrina verificada añadida (${relevantCitations.length} documentos)`)
     } else {
-      console.log('ℹ️ Sin resoluciones verificadas relevantes para esta consulta')
+      console.log('ℹ️ Sin doctrina verificada relevante para esta consulta')
     }
 
     if (contextBlocks.length > 0) {
