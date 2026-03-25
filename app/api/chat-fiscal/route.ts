@@ -37,7 +37,12 @@ async function searchCorpus(query: string, matchCount: number = 5, threshold: nu
     })
     const queryEmbedding = embeddingResponse.data[0].embedding
 
-    // 2. Buscar chunks similares en Supabase (filtrado por source_types)
+    // 2. Buscar chunks similares en Supabase
+    // Pedimos más chunks para luego re-rankear con diversidad de source_types
+    const RETURN_COUNT = 8
+    const MAX_PER_SOURCE = 3
+    const HIGH_SIMILARITY_OVERRIDE = 0.70
+
     const { data, error } = await supabase.rpc('match_documents_v2', {
       query_embedding: queryEmbedding,
       match_threshold: threshold,
@@ -55,14 +60,36 @@ async function searchCorpus(query: string, matchCount: number = 5, threshold: nu
       return ''
     }
 
-    // LOG de diagnóstico RAG (para afinar umbral)
-    console.log(`📊 RAG: ${data.length} chunks encontrados`)
+    // LOG de diagnóstico — todos los chunks recibidos de Supabase
+    console.log(`📊 RAG: ${data.length} chunks recibidos de Supabase (pedidos: ${matchCount})`)
     data.forEach((doc: { source_type: string; title: string | null; similarity: number }, i: number) => {
       console.log(`   [${i + 1}] ${doc.source_type}${doc.title ? ' — ' + doc.title : ''} → similitud: ${(doc.similarity * 100).toFixed(1)}%`)
     })
 
-    // 3. Formatear los resultados como contexto para Claude
-    const contextParts = data.map((doc: {
+    // 3. Re-ranking con diversidad de source_types
+    // Regla: max MAX_PER_SOURCE chunks por source_type,
+    // salvo que la similitud > HIGH_SIMILARITY_OVERRIDE (chunk muy relevante)
+    const selected: typeof data = []
+    const countBySource: Record<string, number> = {}
+
+    for (const doc of data) {
+      if (selected.length >= RETURN_COUNT) break
+
+      const currentCount = countBySource[doc.source_type] || 0
+
+      if (currentCount < MAX_PER_SOURCE || doc.similarity >= HIGH_SIMILARITY_OVERRIDE) {
+        selected.push(doc)
+        countBySource[doc.source_type] = currentCount + 1
+      }
+    }
+
+    // LOG de diagnóstico — chunks seleccionados tras re-ranking
+    console.log(`📊 RAG re-ranking: ${selected.length} chunks seleccionados de ${data.length}`)
+    const sourceSummary = Object.entries(countBySource).map(([k, v]) => `${k}:${v}`).join(', ')
+    console.log(`   Distribución: ${sourceSummary}`)
+
+    // 4. Formatear los resultados como contexto para Claude
+    const contextParts = selected.map((doc: {
       source_file: string
       source_type: string
       title: string | null
@@ -728,7 +755,7 @@ export async function POST(request: NextRequest) {
 
     // PASO 1: Buscar contexto relevante en el corpus (RAG semántico)
     console.log('🔍 Buscando contexto en el corpus...')
-    const ragContext = await searchCorpus(message, 5, 0.5, FISCAL_SOURCE_TYPES)
+    const ragContext = await searchCorpus(message, 12, 0.5, FISCAL_SOURCE_TYPES)
 
     // PASO 1.5: Recuperar resoluciones TEAC verificadas relevantes
     console.log('📋 Buscando resoluciones TEAC verificadas...')
