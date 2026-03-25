@@ -7,6 +7,43 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import rehypeRaw from 'rehype-raw'
 
+// ── Tipos ─────────────────────────────────────────────────────────────────────
+type AssistantMode = 'pt' | 'fiscal'
+
+interface ModeConfig {
+  label: string
+  subtitle: string
+  endpoint: string
+  placeholder: string
+  welcomeIcon: string
+  welcomeTitle: string
+  welcomeDesc: string
+  accentColor: string
+}
+
+const MODE_CONFIG: Record<AssistantMode, ModeConfig> = {
+  pt: {
+    label: 'Precios de Transferencia',
+    subtitle: 'Precios de Transferencia',
+    endpoint: '/api/chat',
+    placeholder: 'Escribe tu consulta sobre precios de transferencia...',
+    welcomeIcon: '⚖️',
+    welcomeTitle: 'Asistente PT',
+    welcomeDesc: 'Consulta doctrina TEAC, métodos de valoración, documentación y régimen sancionador en precios de transferencia.',
+    accentColor: '#5abfc3',
+  },
+  fiscal: {
+    label: 'Fiscal General',
+    subtitle: 'Fiscal General',
+    endpoint: '/api/chat-fiscal',
+    placeholder: 'Escribe tu consulta fiscal (IRPF, IVA, IS, LGT, ISD, ITP...)...',
+    welcomeIcon: '📋',
+    welcomeTitle: 'Asistente Fiscal',
+    welcomeDesc: 'Consulta normativa tributaria, doctrina TEAC/TEAR y resoluciones DGT en materia fiscal general.',
+    accentColor: '#f7c52c',
+  },
+}
+
 // ── Word HTML generator ────────────────────────────────────────────────────
 function inlineMarkdown(text: string): string {
   const parts = text.split(/(<br\s*\/?>)/gi)
@@ -164,7 +201,30 @@ export default function AsistentePage() {
   const [loading, setLoading] = useState(false)
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null)
   const [expandedCitations, setExpandedCitations] = useState<number | null>(null)
+  const [activeMode, setActiveMode] = useState<AssistantMode>('pt')
+  const [showSwitchConfirm, setShowSwitchConfirm] = useState<AssistantMode | null>(null)
   const messageRefs = useRef<(HTMLDivElement | null)[]>([])
+
+  const config = MODE_CONFIG[activeMode]
+
+  function handleModeSwitch(newMode: AssistantMode) {
+    if (newMode === activeMode) return
+    if (messages.length > 0) {
+      setShowSwitchConfirm(newMode)
+    } else {
+      setActiveMode(newMode)
+    }
+  }
+
+  function confirmModeSwitch() {
+    if (showSwitchConfirm) {
+      setActiveMode(showSwitchConfirm)
+      setMessages([])
+      setExpandedCitations(null)
+      setCopiedIndex(null)
+      setShowSwitchConfirm(null)
+    }
+  }
 
   async function handleCopy(content: string, index: number) {
     try {
@@ -196,7 +256,7 @@ export default function AsistentePage() {
     setMessages(prev => [...prev, { role: 'user', content: userMessage }])
     setLoading(true)
     try {
-      const response = await fetch('/api/chat', {
+      const response = await fetch(config.endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message: userMessage, history: messages })
@@ -216,22 +276,114 @@ export default function AsistentePage() {
       <div style={{ background: '#264b6e', padding: '16px 32px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <div>
           <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 2, color: '#5abfc3', textTransform: 'uppercase' }}>Asistente Fiscal IA</div>
-          <div style={{ fontSize: 16, fontWeight: 900, color: 'white' }}>Precios de Transferencia</div>
+          <div style={{ fontSize: 16, fontWeight: 900, color: 'white' }}>{config.subtitle}</div>
         </div>
-        <button onClick={handleLogout} style={{ background: 'none', border: '1px solid rgba(255,255,255,0.3)', borderRadius: 6, padding: '6px 14px', color: 'rgba(255,255,255,0.7)', fontSize: 12, cursor: 'pointer', fontFamily: 'Lato, sans-serif' }}>
-          Cerrar sesión
-        </button>
+
+        {/* SELECTOR PT / FISCAL */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 0 }}>
+          <div style={{
+            display: 'flex',
+            background: 'rgba(255,255,255,0.1)',
+            borderRadius: 8,
+            padding: 3,
+            gap: 2,
+          }}>
+            {(['pt', 'fiscal'] as AssistantMode[]).map(mode => {
+              const isActive = activeMode === mode
+              const modeConf = MODE_CONFIG[mode]
+              return (
+                <button
+                  key={mode}
+                  onClick={() => handleModeSwitch(mode)}
+                  style={{
+                    background: isActive ? 'white' : 'transparent',
+                    color: isActive ? '#264b6e' : 'rgba(255,255,255,0.7)',
+                    border: 'none',
+                    borderRadius: 6,
+                    padding: '6px 16px',
+                    fontSize: 12,
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    fontFamily: 'Lato, sans-serif',
+                    transition: 'all 0.2s',
+                    letterSpacing: 0.3,
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  {mode === 'pt' ? '⚖️' : '📋'} {modeConf.label}
+                </button>
+              )
+            })}
+          </div>
+
+          <div style={{ width: 1, height: 24, background: 'rgba(255,255,255,0.2)', margin: '0 16px' }} />
+
+          <button onClick={handleLogout} style={{ background: 'none', border: '1px solid rgba(255,255,255,0.3)', borderRadius: 6, padding: '6px 14px', color: 'rgba(255,255,255,0.7)', fontSize: 12, cursor: 'pointer', fontFamily: 'Lato, sans-serif' }}>
+            Cerrar sesión
+          </button>
+        </div>
       </div>
+
+      {/* MODAL CONFIRMACIÓN CAMBIO DE MODO */}
+      {showSwitchConfirm && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+          background: 'rgba(38,75,110,0.5)', display: 'flex',
+          alignItems: 'center', justifyContent: 'center', zIndex: 1000,
+        }}>
+          <div style={{
+            background: 'white', borderRadius: 16, padding: '28px 32px',
+            maxWidth: 420, width: '90%', boxShadow: '0 8px 32px rgba(38,75,110,0.2)',
+            fontFamily: 'Lato, sans-serif',
+          }}>
+            <div style={{ fontSize: 16, fontWeight: 700, color: '#264b6e', marginBottom: 8 }}>
+              Cambiar de asistente
+            </div>
+            <div style={{ fontSize: 14, color: '#5a7a8a', marginBottom: 20, lineHeight: 1.6 }}>
+              Al cambiar a <strong style={{ color: '#264b6e' }}>{MODE_CONFIG[showSwitchConfirm].label}</strong> se borrará la conversación actual. ¿Continuar?
+            </div>
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+              <button
+                onClick={() => setShowSwitchConfirm(null)}
+                style={{
+                  background: '#f0f4f8', color: '#5a7a8a', border: 'none',
+                  borderRadius: 8, padding: '8px 20px', fontSize: 13,
+                  fontWeight: 700, cursor: 'pointer', fontFamily: 'Lato, sans-serif',
+                }}
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={confirmModeSwitch}
+                style={{
+                  background: '#264b6e', color: 'white', border: 'none',
+                  borderRadius: 8, padding: '8px 20px', fontSize: 13,
+                  fontWeight: 700, cursor: 'pointer', fontFamily: 'Lato, sans-serif',
+                }}
+              >
+                Cambiar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* INDICADOR DE MODO ACTIVO (barra sutil bajo el header) */}
+      <div style={{
+        height: 3,
+        background: config.accentColor,
+        transition: 'background 0.3s',
+      }} />
 
       {/* CHAT */}
       <div style={{ flex: 1, maxWidth: 800, width: '100%', margin: '0 auto', padding: '24px 24px 0', display: 'flex', flexDirection: 'column', gap: 16 }}>
 
         {messages.length === 0 && (
           <div style={{ textAlign: 'center', padding: '60px 20px' }}>
-            <div style={{ fontSize: 32, marginBottom: 12 }}>⚖️</div>
-            <div style={{ fontSize: 18, fontWeight: 700, color: '#264b6e', marginBottom: 8 }}>Asistente PT</div>
+            <div style={{ fontSize: 32, marginBottom: 12 }}>{config.welcomeIcon}</div>
+            <div style={{ fontSize: 18, fontWeight: 700, color: '#264b6e', marginBottom: 8 }}>{config.welcomeTitle}</div>
             <div style={{ fontSize: 14, color: '#8bafc8', maxWidth: 400, margin: '0 auto' }}>
-              Consulta doctrina TEAC, métodos de valoración, documentación y régimen sancionador en precios de transferencia.
+              {config.welcomeDesc}
             </div>
           </div>
         )}
@@ -442,7 +594,7 @@ export default function AsistentePage() {
             value={input}
             onChange={e => setInput(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
-            placeholder="Escribe tu consulta sobre precios de transferencia..."
+            placeholder={config.placeholder}
             rows={3}
             style={{ flex: 1, border: 'none', outline: 'none', resize: 'none', fontSize: 14, fontFamily: 'Lato, sans-serif', color: '#1a2a3a', lineHeight: 1.5 }}
           />
