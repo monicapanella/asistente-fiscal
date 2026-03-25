@@ -1,0 +1,566 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Propuesta de Corpus · Asistente Fiscal General</title>
+<link href="https://fonts.googleapis.com/css2?family=Lato:wght@300;400;700;900&display=swap" rel="stylesheet">
+<style>
+:root {
+  --amarillo: #f7c52c;
+  --verde-azul: #368087;
+  --turquesa: #5abfc3;
+  --azul-oscuro: #264b6e;
+  --gris-claro: #e5e5e5;
+  --rojo: #c64133;
+  --crema: #fbf6f3;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Lato', sans-serif; background: var(--crema); color: var(--azul-oscuro); line-height: 1.6; }
+.wrap { max-width: 780px; margin: 0 auto; padding: 32px 24px 80px; }
+
+.header { margin-bottom: 36px; border-bottom: 3px solid var(--amarillo); padding-bottom: 20px; }
+.header-badge { display: inline-block; background: var(--amarillo); color: var(--azul-oscuro); font-size: 10px; font-weight: 900; letter-spacing: 2px; text-transform: uppercase; padding: 4px 12px; border-radius: 2px; margin-bottom: 12px; }
+.header h1 { font-size: 22px; font-weight: 900; color: var(--azul-oscuro); line-height: 1.3; }
+.header p { font-size: 13px; color: #8bafc8; margin-top: 6px; }
+
+.section { margin-bottom: 32px; }
+.section-title { font-size: 16px; font-weight: 900; color: var(--verde-azul); margin-bottom: 12px; padding-left: 14px; border-left: 4px solid var(--amarillo); }
+.section-body { font-size: 14px; }
+.section-body p { margin-bottom: 10px; }
+
+.info-box { background: #eef6f7; border-radius: 8px; padding: 14px 16px; margin: 16px 0; font-size: 13px; color: var(--azul-oscuro); border-left: 4px solid var(--turquesa); }
+.warning-box { background: #fef8e5; border-radius: 8px; padding: 14px 16px; margin: 16px 0; font-size: 13px; color: #92400e; border-left: 4px solid var(--amarillo); }
+.alert-box { background: #fee2e2; border-radius: 8px; padding: 14px 16px; margin: 16px 0; font-size: 13px; color: var(--rojo); border-left: 4px solid var(--rojo); }
+
+table { width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 13px; }
+th { background: var(--azul-oscuro); color: white; padding: 10px 12px; text-align: left; font-weight: 700; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; }
+td { padding: 10px 12px; border-bottom: 1px solid var(--gris-claro); vertical-align: top; }
+tr:nth-child(even) td { background: #f8fafb; }
+
+.tag { display: inline-block; font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 3px; }
+.tag-shared { background: #d1fae5; color: #065f46; }
+.tag-new { background: #e0f2fe; color: #0369a1; }
+.tag-pt-only { background: #fce7f3; color: #9d174d; }
+.tag-optional { background: #fef3c7; color: #92400e; }
+.tag-done { background: #d1fae5; color: #065f46; }
+.tag-todo { background: #fee2e2; color: #991b1b; }
+.tag-source { background: #ede9fe; color: #6d28d9; }
+
+.summary-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; margin: 20px 0; }
+.summary-card { background: white; border: 1px solid var(--gris-claro); border-radius: 10px; padding: 16px; text-align: center; }
+.summary-card .num { font-size: 28px; font-weight: 900; color: var(--verde-azul); }
+.summary-card .label { font-size: 11px; color: #8bafc8; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 4px; }
+
+.layer { background: white; border: 1px solid var(--gris-claro); border-radius: 10px; margin-bottom: 16px; overflow: hidden; }
+.layer-header { display: flex; align-items: center; gap: 12px; padding: 14px 16px; cursor: pointer; user-select: none; }
+.layer-header:hover { background: #f8fafb; }
+.layer-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+.layer-title { font-size: 14px; font-weight: 700; flex: 1; }
+.layer-meta { font-size: 11px; color: #8bafc8; }
+.layer-chevron { font-size: 10px; color: #8bafc8; transition: transform 0.2s; }
+.layer-chevron.open { transform: rotate(90deg); }
+.layer-body { display: none; padding: 0 16px 16px; }
+.layer-body.open { display: block; }
+
+.doc-row { display: flex; align-items: flex-start; gap: 10px; padding: 10px 0; border-bottom: 1px solid #f0f0f0; }
+.doc-row:last-child { border-bottom: none; }
+.doc-status { width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 12px; flex-shrink: 0; margin-top: 2px; }
+.doc-status.done { background: #d1fae5; color: #065f46; }
+.doc-status.todo { background: #fee2e2; color: #991b1b; }
+.doc-info { flex: 1; }
+.doc-name { font-size: 13px; font-weight: 700; }
+.doc-detail { font-size: 12px; color: #8bafc8; margin-top: 2px; }
+.doc-chunks { font-size: 12px; font-weight: 700; color: var(--verde-azul); min-width: 80px; text-align: right; }
+
+.footer { text-align: center; font-size: 11px; color: #c8d8e8; margin-top: 48px; padding-top: 20px; border-top: 1px solid var(--gris-claro); }
+
+@media (max-width: 600px) {
+  .summary-grid { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="header">
+    <div class="header-badge">Corpus Fiscal</div>
+    <h1>Propuesta de Corpus para el Asistente Fiscal General</h1>
+    <p>Picas de la Rosa & Asociados — v1.0 · 21 marzo 2026</p>
+  </div>
+
+  <!-- DECISIÓN ARQUITECTÓNICA -->
+  <div class="section">
+    <div class="section-title">1. Decisión arquitectónica: corpus compartido</div>
+    <div class="section-body">
+      <p>Ambos asistentes (PT y Fiscal) comparten la <strong>misma tabla <code>documents</code></strong> en Supabase, diferenciados por el campo <code>source_type</code>. Cada asistente filtra qué <code>source_type</code> consulta en su <code>searchCorpus()</code>.</p>
+      <table>
+        <tr><th>source_type</th><th>Asistente PT</th><th>Asistente Fiscal</th><th>Estado</th></tr>
+        <tr><td><code>ley</code> (LIS)</td><td>✅ Usa</td><td>✅ Usa</td><td><span class="tag tag-done">INGESTADO · 498 chunks</span></td></tr>
+        <tr><td><code>reglamento</code> (RD 634)</td><td>✅ Usa</td><td>✅ Usa</td><td><span class="tag tag-done">INGESTADO · 269 chunks</span></td></tr>
+        <tr><td><code>lgt</code> (LGT)</td><td>✅ Usa</td><td>✅ Usa</td><td><span class="tag tag-done">INGESTADO · 608 chunks</span></td></tr>
+        <tr><td><code>directrices_ocde</code></td><td>✅ Usa</td><td>❌ No usa</td><td><span class="tag tag-done">INGESTADO · 1.017 chunks</span></td></tr>
+        <tr><td><code>modulo_casos_complejos</code></td><td>✅ Usa</td><td>❌ No usa</td><td><span class="tag tag-done">INGESTADO · 13 chunks</span></td></tr>
+        <tr><td><code>lirpf</code> (IRPF)</td><td>❌ No usa</td><td>✅ Usa</td><td><span class="tag tag-todo">PENDIENTE</span></td></tr>
+        <tr><td><code>rirpf</code> (Regl. IRPF)</td><td>❌ No usa</td><td>✅ Usa</td><td><span class="tag tag-todo">PENDIENTE</span></td></tr>
+        <tr><td><code>liva</code> (IVA)</td><td>❌ No usa</td><td>✅ Usa</td><td><span class="tag tag-todo">PENDIENTE</span></td></tr>
+        <tr><td><code>riva</code> (Regl. IVA)</td><td>❌ No usa</td><td>✅ Usa</td><td><span class="tag tag-todo">PENDIENTE</span></td></tr>
+        <tr><td><code>rggi</code> (Regl. Gestión e Inspección)</td><td>❌ No usa</td><td>✅ Usa</td><td><span class="tag tag-todo">PENDIENTE</span></td></tr>
+        <tr><td><code>lisd</code> (Sucesiones y Donaciones)</td><td>❌ No usa</td><td>✅ Usa</td><td><span class="tag tag-todo">PENDIENTE</span></td></tr>
+        <tr><td><code>lip</code> (Patrimonio)</td><td>❌ No usa</td><td>✅ Usa</td><td><span class="tag tag-todo">PENDIENTE</span></td></tr>
+        <tr><td><code>litp</code> (ITP y AJD)</td><td>❌ No usa</td><td>✅ Usa</td><td><span class="tag tag-todo">PENDIENTE</span></td></tr>
+        <tr><td><code>tributos_cedidos_cat</code> (Código Tributario Catalunya)</td><td>❌ No usa</td><td>✅ Usa</td><td><span class="tag tag-todo">PENDIENTE</span></td></tr>
+      </table>
+      <div class="info-box">
+        <strong>Implementación técnica:</strong> El <code>searchCorpus()</code> del asistente fiscal añadirá un filtro <code>WHERE source_type NOT IN ('directrices_ocde', 'modulo_casos_complejos')</code>. El del PT sigue como está. Así ambos comparten tabla pero cada uno busca solo en su ámbito.
+      </div>
+    </div>
+  </div>
+
+  <!-- RESUMEN NUMÉRICO -->
+  <div class="section">
+    <div class="section-title">2. Resumen del corpus completo</div>
+    <div class="section-body">
+      <div class="summary-grid">
+        <div class="summary-card">
+          <div class="num">~7.000</div>
+          <div class="label">Chunks totales<br>estimados (ambos)</div>
+        </div>
+        <div class="summary-card">
+          <div class="num">1.375</div>
+          <div class="label">Chunks ya<br>ingestados (compartidos)</div>
+        </div>
+        <div class="summary-card">
+          <div class="num">~4.200</div>
+          <div class="label">Chunks nuevos<br>por ingestar</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- CAPA 1: NORMATIVA -->
+  <div class="section">
+    <div class="section-title">3. Capa 1 — Normativa (leyes y reglamentos)</div>
+    <div class="section-body">
+      <p>Los documentos ordenados por prioridad de ingesta. La estimación de chunks se basa en la experiencia con la LIS (498 chunks para ~130 artículos) y la LGT (608 chunks para 282 artículos).</p>
+
+      <!-- Ya ingestados -->
+      <div class="layer">
+        <div class="layer-header" onclick="toggleLayer('shared')">
+          <div class="layer-dot" style="background:var(--verde-azul)"></div>
+          <div class="layer-title">Ya ingestados (compartidos con PT)</div>
+          <div class="layer-meta">3 documentos · 1.375 chunks</div>
+          <span class="layer-chevron" id="chev-shared">▶</span>
+        </div>
+        <div class="layer-body" id="body-shared">
+          <div class="doc-row">
+            <div class="doc-status done">✓</div>
+            <div class="doc-info">
+              <div class="doc-name">Ley 27/2014, del Impuesto sobre Sociedades (LIS)</div>
+              <div class="doc-detail">source_type: <code>ley</code> · Artículos completos con metadatos · Compartida PT+Fiscal</div>
+            </div>
+            <div class="doc-chunks">498 chunks</div>
+          </div>
+          <div class="doc-row">
+            <div class="doc-status done">✓</div>
+            <div class="doc-info">
+              <div class="doc-name">RD 634/2015, Reglamento del IS</div>
+              <div class="doc-detail">source_type: <code>reglamento</code> · Compartido PT+Fiscal</div>
+            </div>
+            <div class="doc-chunks">269 chunks</div>
+          </div>
+          <div class="doc-row">
+            <div class="doc-status done">✓</div>
+            <div class="doc-info">
+              <div class="doc-name">Ley 58/2003, General Tributaria (LGT)</div>
+              <div class="doc-detail">source_type: <code>lgt</code> · 282 artículos · Compartida PT+Fiscal</div>
+            </div>
+            <div class="doc-chunks">608 chunks</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- PRIORIDAD ALTA -->
+      <div class="layer">
+        <div class="layer-header" onclick="toggleLayer('high')">
+          <div class="layer-dot" style="background:var(--rojo)"></div>
+          <div class="layer-title">Prioridad ALTA — Imprescindibles para el fiscal</div>
+          <div class="layer-meta">4 documentos · ~2.200 chunks estimados</div>
+          <span class="layer-chevron" id="chev-high">▶</span>
+        </div>
+        <div class="layer-body" id="body-high">
+          <div class="doc-row">
+            <div class="doc-status todo">+</div>
+            <div class="doc-info">
+              <div class="doc-name">Ley 35/2006, del IRPF (LIRPF)</div>
+              <div class="doc-detail">source_type: <code>lirpf</code> · ~108 artículos + disposiciones · BOE-A-2006-20764 (versión consolidada)</div>
+              <div class="doc-detail"><span class="tag tag-source">Fuente: BOE consolidado</span> · Necesita parser por artículos como LIS</div>
+            </div>
+            <div class="doc-chunks">~500 chunks</div>
+          </div>
+          <div class="doc-row">
+            <div class="doc-status todo">+</div>
+            <div class="doc-info">
+              <div class="doc-name">Ley 37/1992, del IVA (LIVA)</div>
+              <div class="doc-detail">source_type: <code>liva</code> · ~163 artículos (incluyendo artículos bis, ter, etc.) · BOE-A-1992-28740</div>
+              <div class="doc-detail"><span class="tag tag-source">Fuente: BOE consolidado</span> · La ley de IVA más extensa — muchos regímenes especiales</div>
+            </div>
+            <div class="doc-chunks">~700 chunks</div>
+          </div>
+          <div class="doc-row">
+            <div class="doc-status todo">+</div>
+            <div class="doc-info">
+              <div class="doc-name">RD 1065/2007, Reglamento General de Gestión e Inspección (RGGI)</div>
+              <div class="doc-detail">source_type: <code>rggi</code> · ~240 artículos · Clave para procedimientos tributarios, requerimientos, actas</div>
+              <div class="doc-detail"><span class="tag tag-source">Fuente: BOE consolidado</span></div>
+            </div>
+            <div class="doc-chunks">~600 chunks</div>
+          </div>
+          <div class="doc-row">
+            <div class="doc-status todo">+</div>
+            <div class="doc-info">
+              <div class="doc-name">RD 439/2007, Reglamento del IRPF</div>
+              <div class="doc-detail">source_type: <code>rirpf</code> · ~120 artículos · Retenciones, pagos a cuenta, estimación directa/objetiva</div>
+              <div class="doc-detail"><span class="tag tag-source">Fuente: BOE consolidado</span></div>
+            </div>
+            <div class="doc-chunks">~400 chunks</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- PRIORIDAD MEDIA -->
+      <div class="layer">
+        <div class="layer-header" onclick="toggleLayer('medium')">
+          <div class="layer-dot" style="background:var(--amarillo)"></div>
+          <div class="layer-title">Prioridad MEDIA — Necesarios pero menos frecuentes</div>
+          <div class="layer-meta">3 documentos · ~1.100 chunks estimados</div>
+          <span class="layer-chevron" id="chev-medium">▶</span>
+        </div>
+        <div class="layer-body" id="body-medium">
+          <div class="doc-row">
+            <div class="doc-status todo">+</div>
+            <div class="doc-info">
+              <div class="doc-name">RD 1624/1992, Reglamento del IVA</div>
+              <div class="doc-detail">source_type: <code>riva</code> · ~80 artículos · Obligaciones formales, libros registro, facturación</div>
+              <div class="doc-detail"><span class="tag tag-source">Fuente: BOE consolidado</span></div>
+            </div>
+            <div class="doc-chunks">~350 chunks</div>
+          </div>
+          <div class="doc-row">
+            <div class="doc-status todo">+</div>
+            <div class="doc-info">
+              <div class="doc-name">Ley 29/1987, del Impuesto sobre Sucesiones y Donaciones (LISD)</div>
+              <div class="doc-detail">source_type: <code>lisd</code> · ~42 artículos · Menos extensa, pero relevante para patrimonios y herencias</div>
+              <div class="doc-detail"><span class="tag tag-source">Fuente: BOE consolidado</span></div>
+            </div>
+            <div class="doc-chunks">~200 chunks</div>
+          </div>
+          <div class="doc-row">
+            <div class="doc-status todo">+</div>
+            <div class="doc-info">
+              <div class="doc-name">RDL 1/1993, del ITP y AJD (LITP)</div>
+              <div class="doc-detail">source_type: <code>litp</code> · ~60 artículos · Transmisiones patrimoniales, operaciones societarias, AJD</div>
+              <div class="doc-detail"><span class="tag tag-source">Fuente: BOE consolidado</span></div>
+            </div>
+            <div class="doc-chunks">~250 chunks</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- PRIORIDAD BAJA -->
+      <div class="layer">
+        <div class="layer-header" onclick="toggleLayer('low')">
+          <div class="layer-dot" style="background:var(--gris-claro)"></div>
+          <div class="layer-title">Prioridad BAJA — Opcionales según demanda</div>
+          <div class="layer-meta">2 documentos · ~350 chunks estimados</div>
+          <span class="layer-chevron" id="chev-low">▶</span>
+        </div>
+        <div class="layer-body" id="body-low">
+          <div class="doc-row">
+            <div class="doc-status todo">+</div>
+            <div class="doc-info">
+              <div class="doc-name">Ley 19/1991, del Impuesto sobre el Patrimonio (LIP)</div>
+              <div class="doc-detail">source_type: <code>lip</code> · ~37 artículos · Solo si el despacho trabaja IP con frecuencia</div>
+            </div>
+            <div class="doc-chunks">~150 chunks</div>
+          </div>
+          <div class="doc-row">
+            <div class="doc-status todo">+</div>
+            <div class="doc-info">
+              <div class="doc-name">RDL 2/2004, texto refundido IIVTNU (plusvalía municipal)</div>
+              <div class="doc-detail">source_type: <code>iivtnu</code> · ~20 artículos relevantes · Post STC 182/2021</div>
+            </div>
+            <div class="doc-chunks">~100 chunks</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- NORMATIVA AUTONÓMICA CATALUÑA -->
+      <div class="layer">
+        <div class="layer-header" onclick="toggleLayer('cat')">
+          <div class="layer-dot" style="background:var(--turquesa)"></div>
+          <div class="layer-title">Normativa autonómica — Catalunya (tributos cedidos)</div>
+          <div class="layer-meta">1 documento principal · ~400 chunks estimados</div>
+          <span class="layer-chevron" id="chev-cat">▶</span>
+        </div>
+        <div class="layer-body" id="body-cat">
+          <div class="doc-row">
+            <div class="doc-status todo">+</div>
+            <div class="doc-info">
+              <div class="doc-name">Decreto Legislativo 1/2024, de 12 de marzo — Libro VI del Código Tributario de Catalunya</div>
+              <div class="doc-detail">source_type: <code>tributos_cedidos_cat</code> · Texto refundido de TODOS los tributos cedidos en Cataluña</div>
+              <div class="doc-detail"><span class="tag tag-source">Fuente: BOE-A-2024-6951 / DOGC</span> · 8 títulos, ~60 páginas</div>
+              <div class="doc-detail" style="margin-top:6px;">
+                <strong>Contenido:</strong><br>
+                Título I — IRPF: escala autonómica, deducciones autonómicas<br>
+                Título II — IP: mínimo exento, tarifa autonómica<br>
+                Título III — ISD: reducciones (sucesiones y donaciones), tarifas, coeficientes multiplicadores<br>
+                Título IV — ITPAJD: tipos de TPO (10% inmuebles, bonificaciones), tipos AJD<br>
+                Títulos V-VII — Juego, medios de transporte, residuos<br>
+                Título VIII — Obligaciones formales y normas de aplicación
+              </div>
+              <div class="doc-detail" style="margin-top:6px;">
+                <span class="tag" style="background:#fef3c7;color:#92400e;">VENTAJA</span> Desde 2024 toda la normativa autonómica de tributos cedidos está en UN SOLO documento refundido. Antes estaba dispersa en decenas de leyes de medidas fiscales.
+              </div>
+              <div class="doc-detail" style="margin-top:6px;">
+                <span class="tag" style="background:#fee2e2;color:#991b1b;">OJO</span> Modificado por DL 5/2025 (marzo 2025) y DL 10/2024 (nov 2024). Verificar versión consolidada vigente al momento de ingestar.
+              </div>
+            </div>
+            <div class="doc-chunks">~400 chunks</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- CAPA 2: DOCTRINA -->
+  <div class="section">
+    <div class="section-title">4. Capa 2 — Doctrina administrativa (verified_citations)</div>
+    <div class="section-body">
+      <p>La tabla <code>verified_citations</code> ya existe y funciona. Para el fiscal general hay que ampliar la cobertura temática más allá de PT/operaciones vinculadas.</p>
+      
+      <table>
+        <tr><th>Materia</th><th>Fuente</th><th>Estado actual</th><th>Objetivo</th></tr>
+        <tr>
+          <td>Operaciones vinculadas / PT</td>
+          <td>TEAC + DGT</td>
+          <td><span class="tag tag-done">24 docs</span></td>
+          <td>Compartido con PT. Seguir ampliando.</td>
+        </tr>
+        <tr>
+          <td>Sanciones y régimen sancionador</td>
+          <td>TEAC</td>
+          <td><span class="tag tag-todo">0 docs</span></td>
+          <td>5-10 resoluciones clave (proporcionalidad, graduación, reducciones)</td>
+        </tr>
+        <tr>
+          <td>Prescripción y caducidad</td>
+          <td>TEAC + TS</td>
+          <td><span class="tag tag-todo">0 docs</span></td>
+          <td>5-8 resoluciones (interrupción, comprobación periodos prescritos, art. 66 bis)</td>
+        </tr>
+        <tr>
+          <td>Procedimiento de inspección</td>
+          <td>TEAC</td>
+          <td><span class="tag tag-todo">0 docs</span></td>
+          <td>5-8 resoluciones (duración, ampliación, actas con acuerdo, dilaciones)</td>
+        </tr>
+        <tr>
+          <td>Responsabilidad tributaria</td>
+          <td>TEAC</td>
+          <td><span class="tag tag-todo">0 docs</span></td>
+          <td>5-8 resoluciones (derivación administradores art. 43.1.a-b, sucesores)</td>
+        </tr>
+        <tr>
+          <td>IRPF — Rendimientos</td>
+          <td>DGT</td>
+          <td><span class="tag tag-todo">0 docs</span></td>
+          <td>8-12 consultas (trabajo/especie, actividades económicas, ganancias patrimoniales)</td>
+        </tr>
+        <tr>
+          <td>IVA — Exenciones y deducciones</td>
+          <td>DGT + TEAC</td>
+          <td><span class="tag tag-todo">0 docs</span></td>
+          <td>8-12 documentos (renuncia exención inmobiliaria, prorrata, inversión sujeto pasivo)</td>
+        </tr>
+        <tr>
+          <td>IS — Fuera de PT</td>
+          <td>DGT + TEAC</td>
+          <td><span class="tag tag-todo">0 docs</span></td>
+          <td>5-8 documentos (gastos financieros art. 16, FEAC, reducida dimensión)</td>
+        </tr>
+        <tr>
+          <td>Recaudación y apremio</td>
+          <td>TEAC</td>
+          <td><span class="tag tag-todo">0 docs</span></td>
+          <td>3-5 resoluciones (providencia apremio, suspensión, tercerías)</td>
+        </tr>
+      </table>
+
+      <div class="summary-grid" style="grid-template-columns: 1fr 1fr;">
+        <div class="summary-card">
+          <div class="num">24</div>
+          <div class="label">Docs verificados<br>actuales (PT)</div>
+        </div>
+        <div class="summary-card">
+          <div class="num">~70-90</div>
+          <div class="label">Docs verificados<br>objetivo fiscal completo</div>
+        </div>
+      </div>
+
+      <div class="warning-box">
+        <strong>Proceso de ampliación:</strong> Se aplica el proceso de verificación v1 que acabamos de definir. Monica busca en DYCTEA/PETETE → prepara ficha → Picas valida → inserción en admin standalone v2. Las resoluciones fiscales generales se insertan con <code>source = 'TEAC'</code> o <code>source = 'DGT'</code> según corresponda, igual que las de PT.
+      </div>
+    </div>
+  </div>
+
+  <!-- CAPA 3: TÉCNICA DE INGESTA -->
+  <div class="section">
+    <div class="section-title">5. Ingesta técnica — cómo hacerlo</div>
+    <div class="section-body">
+      <p>La estrategia técnica replica lo que ya funciona con la LIS y la LGT:</p>
+      <table>
+        <tr><th>Paso</th><th>Acción</th><th>Herramienta</th></tr>
+        <tr>
+          <td>1</td>
+          <td>Descargar PDF consolidado del BOE de cada ley/reglamento</td>
+          <td>boe.es → versión consolidada PDF</td>
+        </tr>
+        <tr>
+          <td>2</td>
+          <td>Adaptar el script <code>ingest-ley-articulos.ts</code> para cada documento, con su <code>source_type</code> específico</td>
+          <td>TypeScript + OpenAI embeddings</td>
+        </tr>
+        <tr>
+          <td>3</td>
+          <td>Ejecutar la ingesta: parsear por artículos → generar embeddings → insertar en Supabase</td>
+          <td>Script local → Supabase</td>
+        </tr>
+        <tr>
+          <td>4</td>
+          <td>Verificar en Supabase que los chunks se han insertado correctamente con metadatos</td>
+          <td>Supabase Dashboard</td>
+        </tr>
+      </table>
+
+      <div class="info-box">
+        <strong>Script reutilizable:</strong> El <code>ingest-ley-articulos.ts</code> ya parsea por artículos y genera metadatos (<code>source_type</code>, <code>title</code>, <code>article_number</code>). Solo hay que parametrizarlo para cada nueva ley. Podemos crear un script genérico que reciba el source_type y el PDF como argumento.
+      </div>
+    </div>
+  </div>
+
+  <!-- ORDEN DE INGESTA -->
+  <div class="section">
+    <div class="section-title">6. Plan de ejecución — orden recomendado</div>
+    <div class="section-body">
+      <table>
+        <tr><th>Orden</th><th>Documento</th><th>Chunks est.</th><th>Justificación</th></tr>
+        <tr>
+          <td><strong>1</strong></td>
+          <td>LIRPF (Ley 35/2006)</td>
+          <td>~500</td>
+          <td>Impuesto más consultado por PF. Alta demanda del despacho.</td>
+        </tr>
+        <tr>
+          <td><strong>2</strong></td>
+          <td>LIVA (Ley 37/1992)</td>
+          <td>~700</td>
+          <td>Segundo pilar fiscal. Exenciones inmobiliarias, ISP, prorrata son temas frecuentes.</td>
+        </tr>
+        <tr>
+          <td><strong>3</strong></td>
+          <td>RGGI (RD 1065/2007)</td>
+          <td>~600</td>
+          <td>Clave para la defensa frente a la AEAT: plazos, notificaciones, actas, dilaciones.</td>
+        </tr>
+        <tr>
+          <td><strong>4</strong></td>
+          <td>Regl. IRPF (RD 439/2007)</td>
+          <td>~400</td>
+          <td>Complemento de la LIRPF: retenciones, pagos a cuenta, módulos.</td>
+        </tr>
+        <tr>
+          <td><strong>5</strong></td>
+          <td>Código Tributario Catalunya — Libro VI (DL 1/2024)</td>
+          <td>~400</td>
+          <td>Tributos cedidos: ISD, ITPAJD, IP, IRPF autonómico. Imprescindible para un despacho en Cataluña.</td>
+        </tr>
+        <tr>
+          <td><strong>6</strong></td>
+          <td><strong>6</strong></td>
+          <td>Regl. IVA (RD 1624/1992)</td>
+          <td>~350</td>
+          <td>Complemento de la LIVA: libros registro, facturas, devoluciones.</td>
+        </tr>
+        <tr>
+          <td><strong>7</strong></td>
+          <td>LISD (Ley 29/1987)</td>
+          <td>~200</td>
+          <td>Necesaria para patrimonios y herencias.</td>
+        </tr>
+        <tr>
+          <td><strong>8</strong></td>
+          <td>LITP (RDL 1/1993)</td>
+          <td>~250</td>
+          <td>Transmisiones, operaciones societarias, AJD.</td>
+        </tr>
+        <tr>
+          <td><strong>9</strong></td>
+          <td>LIP (Ley 19/1991)</td>
+          <td>~150</td>
+          <td>Solo si el despacho trabaja IP habitualmente.</td>
+        </tr>
+        <tr>
+          <td><strong>10</strong></td>
+          <td>IIVTNU (RDL 2/2004)</td>
+          <td>~100</td>
+          <td>Plusvalía municipal post STC 182/2021. Opcional.</td>
+        </tr>
+      </table>
+
+      <div class="warning-box">
+        <strong>Estimación de tiempo:</strong> Cada ley requiere ~2-3 horas (descargar PDF + adaptar script + ejecutar ingesta + verificar). El corpus completo de prioridad alta (docs 1-5 incluyendo Catalunya) se puede tener en <strong>3 sesiones de trabajo</strong>. El corpus completo (10 docs) en unas <strong>5-6 sesiones</strong>.
+      </div>
+    </div>
+  </div>
+
+  <!-- CONSIDERACIONES -->
+  <div class="section">
+    <div class="section-title">7. Consideraciones importantes</div>
+    <div class="section-body">
+      <div class="info-box">
+        <strong>Versiones consolidadas:</strong> Todas las leyes deben descargarse del BOE en su versión consolidada vigente, no la versión original. La LIRPF, por ejemplo, ha sido modificada decenas de veces desde 2006.
+      </div>
+      <div class="info-box">
+        <strong>Normativa autonómica — Catalunya incluida:</strong> El Decreto Legislativo 1/2024 (Libro VI del Código Tributario de Catalunya) refunde toda la normativa autonómica de tributos cedidos en un solo documento. Cubre IRPF autonómico, IP, ISD, ITPAJD y otros. Si en el futuro se necesitan otras CCAA, se añadirán como <code>source_type</code> adicionales (ej: <code>tributos_cedidos_val</code>).
+      </div>
+      <div class="alert-box">
+        <strong>Coste de embeddings:</strong> Con ~3.800 chunks nuevos y OpenAI text-embedding-3-small, el coste estimado de ingesta es de ~$0.50-1.00 (una sola vez). El coste recurrente es solo por las consultas de los usuarios (~$0.01 por consulta). No es un factor limitante.
+      </div>
+      <div class="info-box">
+        <strong>Almacenamiento Supabase:</strong> Con ~6.500 chunks totales (PT + Fiscal), el almacenamiento en pgvector será de ~50-80 MB. Bien dentro del plan gratuito de Supabase.
+      </div>
+    </div>
+  </div>
+
+  <div class="footer">
+    Picas de la Rosa & Asociados · Propuesta de Corpus Fiscal v1.0 · 21 marzo 2026
+  </div>
+
+</div>
+
+<script>
+function toggleLayer(id) {
+  const body = document.getElementById('body-' + id);
+  const chevron = document.getElementById('chev-' + id);
+  body.classList.toggle('open');
+  chevron.classList.toggle('open');
+}
+// Open all by default
+['shared','high','medium','low','cat'].forEach(id => {
+  document.getElementById('body-' + id).classList.add('open');
+  document.getElementById('chev-' + id).classList.add('open');
+});
+</script>
+</body>
+</html>

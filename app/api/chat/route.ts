@@ -16,10 +16,17 @@ const openai = new OpenAI({
 })
 
 // ============================================
+// FILTRADO BIDIRECCIONAL: source_types por asistente
+// ============================================
+
+const PT_SOURCE_TYPES = ['ley', 'reglamento', 'directrices_ocde', 'lgt', 'modulo_casos_complejos']
+const FISCAL_SOURCE_TYPES = ['ley', 'reglamento', 'lgt', 'lirpf', 'rirpf', 'liva', 'riva', 'rggi', 'lisd', 'litp', 'tributos_cedidos_cat']
+
+// ============================================
 // RAG: Búsqueda semántica en el corpus
 // ============================================
 
-async function searchCorpus(query: string, matchCount: number = 5, threshold: number = 0.5): Promise<string> {
+async function searchCorpus(query: string, matchCount: number = 5, threshold: number = 0.5, sourceTypes: string[] = PT_SOURCE_TYPES): Promise<string> {
   try {
     const supabase = createServiceClient()
 
@@ -30,11 +37,12 @@ async function searchCorpus(query: string, matchCount: number = 5, threshold: nu
     })
     const queryEmbedding = embeddingResponse.data[0].embedding
 
-    // 2. Buscar chunks similares en Supabase
-    const { data, error } = await supabase.rpc('match_documents', {
+    // 2. Buscar chunks similares en Supabase (filtrado por source_types)
+    const { data, error } = await supabase.rpc('match_documents_v2', {
       query_embedding: queryEmbedding,
       match_threshold: threshold,
       match_count: matchCount,
+      filter_source_types: sourceTypes,
     })
 
     if (error) {
@@ -67,6 +75,14 @@ async function searchCorpus(query: string, matchCount: number = 5, threshold: nu
         'directrices_ocde': 'Directrices OCDE PT 2022',
         'modulo_casos_complejos': 'Módulo Casos Complejos PT',
         'lgt': 'Ley 58/2003 General Tributaria',
+        'lirpf': 'Ley 35/2006 IRPF',
+        'rirpf': 'RD 439/2007 Reglamento IRPF',
+        'liva': 'Ley 37/1992 IVA',
+        'riva': 'RD 1624/1992 Reglamento IVA',
+        'rggi': 'RD 1065/2007 RGGI',
+        'lisd': 'Ley 29/1987 ISD',
+        'litp': 'RDL 1/1993 ITP-AJD',
+        'tributos_cedidos_cat': 'DL 1/2024 Código Tributario Catalunya',
       }[doc.source_type] || doc.source_file
 
       return `[Fuente ${i + 1}: ${sourceLabel}${doc.title ? ' — ' + doc.title : ''} (similitud: ${(doc.similarity * 100).toFixed(0)}%)]\n${doc.content}`
