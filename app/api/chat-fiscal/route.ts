@@ -311,6 +311,102 @@ function formatCitationReport(verificationResults: {
 }
 
 
+
+// ============================================
+// MULTI-QUERY RAG
+// ============================================
+
+async function generateSubQueries(query: string): Promise<string[]> {
+  // Consultas cortas o simples: devolver tal cual sin llamada extra
+  const words = query.trim().split(/\s+/)
+  if (words.length < 12) {
+    console.log('📊 Multi-query: consulta corta, sin descomposición')
+    return [query]
+  }
+
+  try {
+    const response = await anthropic.messages.create({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 300,
+      messages: [{
+        role: 'user',
+        content: `Analiza esta consulta fiscal y decide si es simple o compleja.
+
+CONSULTA: "${query}"
+
+Si la consulta trata UN SOLO tema fiscal → responde exactamente: SIMPLE
+Si la consulta mezcla VARIOS temas fiscales distintos (ej: IVA + prescripción + sanciones, o IRPF + IS + procedimiento inspector) → descomponla en 2-4 sub-preguntas específicas, una por línea, sin numeración ni guiones.
+
+Responde SOLO con "SIMPLE" o con las sub-preguntas, sin ningún otro texto.`
+      }]
+    })
+
+    const text = response.content[0].type === 'text' ? response.content[0].text.trim() : ''
+
+    if (!text || text === 'SIMPLE') {
+      console.log('📊 Multi-query: consulta simple, sin descomposición')
+      return [query]
+    }
+
+    const subQueries = text.split('\n').map(q => q.trim()).filter(q => q.length > 5)
+
+    if (subQueries.length <= 1) {
+      return [query]
+    }
+
+    console.log(`📊 Multi-query: ${subQueries.length} sub-consultas generadas`)
+    subQueries.forEach((q, i) => console.log(`   [${i + 1}] ${q}`))
+    return subQueries
+
+  } catch (err) {
+    console.error('Error en generateSubQueries:', err)
+    return [query]
+  }
+}
+
+async function multiQuerySearch(
+  query: string,
+  matchCount: number = 12,
+  threshold: number = 0.5,
+  sourceTypes: string[] = FISCAL_SOURCE_TYPES
+): Promise<string> {
+  const subQueries = await generateSubQueries(query)
+
+  // Si es consulta simple, llamada directa sin overhead
+  if (subQueries.length === 1) {
+    return searchCorpus(query, matchCount, threshold, sourceTypes)
+  }
+
+  // Ejecutar búsquedas en paralelo
+  const results = await Promise.all(
+    subQueries.map(q => searchCorpus(q, 8, threshold, sourceTypes))
+  )
+
+  // Merge con deduplicación — eliminar bloques duplicados por contenido
+  const seen = new Set<string>()
+  const merged: string[] = []
+
+  for (const result of results) {
+    if (!result) continue
+    const blocks = result.split('\n\n---\n\n')
+    for (const block of blocks) {
+      // Usar los primeros 80 chars como fingerprint de deduplicación
+      const fingerprint = block.slice(0, 80).trim()
+      if (!seen.has(fingerprint)) {
+        seen.add(fingerprint)
+        merged.push(block)
+      }
+    }
+  }
+
+  // Limitar a 12 chunks máximo para no saturar el contexto
+  const limited = merged.slice(0, 12)
+
+  console.log(`📊 Multi-query merge: ${merged.length} chunks únicos → ${limited.length} enviados a Claude`)
+
+  return limited.join('\n\n---\n\n')
+}
+
 // ============================================
 // SYSTEM PROMPT — Asistente Fiscal General v3.1
 // ============================================
@@ -779,7 +875,7 @@ export async function POST(request: NextRequest) {
 
     // PASO 1: Buscar contexto relevante en el corpus (RAG semántico)
     console.log('🔍 Buscando contexto en el corpus...')
-    const ragContext = await searchCorpus(message, 12, 0.5, FISCAL_SOURCE_TYPES)
+    const ragContext = await multiQuerySearch(message, 12, 0.5, FISCAL_SOURCE_TYPES)
 
     // PASO 1.5: Recuperar resoluciones TEAC verificadas relevantes
     console.log('📋 Buscando resoluciones TEAC verificadas...')
