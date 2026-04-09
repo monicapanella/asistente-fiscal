@@ -1037,6 +1037,7 @@ Cada ficha DEBE incluir un enlace clicable. Sigue esta jerarquía (usa la primer
 
 export async function POST(request: NextRequest) {
   try {
+    const startTime = Date.now()
     const { message, history } = await request.json()
 
     // PASO 1: Buscar contexto relevante en el corpus (RAG semántico)
@@ -1151,6 +1152,39 @@ export async function POST(request: NextRequest) {
             console.log('   El modelo ya incluyó verificación de citas en su respuesta — omitiendo post-processing')
           } else {
             console.log('   No se detectaron citas con número de resolución')
+          }
+
+          // PASO 7: Logging en usage_logs (no bloquea la respuesta)
+          try {
+            const supabaseLog = createServiceClient()
+            
+            // Extraer queries de web search del finalMessage si las hay
+            const webSearchQueries = finalMessage.content
+              .filter((block: { type: string }) => block.type === 'server_tool_use')
+              .map((block: any) => block.input?.query || '')
+              .filter((q: string) => q.length > 0)
+
+            await supabaseLog.from('usage_logs').insert({
+              assistant_type: 'fiscal',
+              query_text: message,
+              investigation_mode_activated: webSearchUsed,
+              web_search_queries: webSearchQueries.length > 0 ? webSearchQueries : null,
+              web_search_count: webSearchQueries.length,
+              web_search_cost_estimate: webSearchQueries.length > 0 ? webSearchQueries.length * 0.02 : 0,
+              rag_chunks_used: ragContext ? ragContext.split('---').length : 0,
+              verified_citations_used: relevantCitations.length > 0 
+                ? relevantCitations.map((c: VerifiedCitation) => c.resolution_number) 
+                : null,
+              investigation_results_count: webSearchUsed 
+                ? finalMessage.content.filter((block: { type: string }) => block.type === 'server_tool_result').length 
+                : 0,
+              response_time_ms: Date.now() - startTime,
+              input_tokens: finalMessage.usage.input_tokens,
+              output_tokens: finalMessage.usage.output_tokens,
+            })
+            console.log('📊 usage_log registrado')
+          } catch (logError) {
+            console.error('⚠️ Error registrando usage_log (no afecta la respuesta):', logError)
           }
 
           // Señal de fin del stream
