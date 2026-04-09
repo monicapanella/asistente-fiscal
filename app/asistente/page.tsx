@@ -526,6 +526,16 @@ export default function AsistentePage() {
                           {children}
                         </code>
                       ),
+                      a: ({href, children}) => (
+                        <a
+                          href={href}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          style={{ color: '#368087', fontWeight: 700, textDecoration: 'underline', textUnderlineOffset: 2 }}
+                        >
+                          {children}
+                        </a>
+                      ),
                       table: ({children}) => (
                         <div style={{ overflowX: 'auto', margin: '12px 0' }}>
                           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>

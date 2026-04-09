@@ -962,9 +962,8 @@ Antes de presentar una resolución encontrada por búsqueda web, comprueba si su
 
 ### FORMATO DE PRESENTACIÓN
 
-Cuando presentes resultados del modo investigación, usa SIEMPRE esta estructura:
+Cuando presentes resultados del modo investigación, usa SIEMPRE esta estructura. IMPORTANTE: Los enlaces de verificación deben ser links markdown clicables con formato [texto](url), NUNCA entre backticks.
 
-\`\`\`
 ---
 
 🔍 **MODO INVESTIGACIÓN — Resoluciones y jurisprudencia encontradas**
@@ -976,9 +975,8 @@ Cuando presentes resultados del modo investigación, usa SIEMPRE esta estructura
 - **Criterio relevante:** [Resumen PARAFRASEADO del criterio — nunca copies textualmente de la fuente]
 - **Relevancia para el caso:** [Por qué esta resolución apoya o afecta la posición del contribuyente]
 - **Aplicabilidad:** [Vinculante en todo el territorio / Vinculante en [CA] / Precedente orientativo de otra jurisdicción]
-- **🔗 Verificar:** [enlace de verificación]
+- 🔗 [Verificar en fuente primaria](url_de_verificación) — SIEMPRE como link markdown clicable, NUNCA entre backticks
 - **Estado:** ⚠️ NO VERIFICADA
-\`\`\`
 
 ### APLICABILIDAD TERRITORIAL
 
@@ -994,15 +992,17 @@ Clasifica SIEMPRE cada resolución según su alcance:
 
 Cada ficha DEBE incluir un enlace clicable. Sigue esta jerarquía (usa la primera opción disponible):
 
-1. **Si encontraste enlace directo a Iberley** → Usa ese enlace directamente.
-2. **Si es resolución TEAC con RG conocido** → Construye URL directa de DYCTEA:
-   \`https://serviciostelematicosext.hacienda.gob.es/TEAC/DYCTEA/criterio.aspx?id=[SEDE]/[RECLAMACION]/[AÑO]/00/0/1\`
+1. **Si encontraste enlace directo a Iberley** → Usa ese enlace: [Verificar en Iberley](url_iberley)
+2. **Si es resolución TEAC con RG conocido** → Construye URL directa de DYCTEA y escríbela como link:
+   [Verificar en DYCTEA](https://serviciostelematicosext.hacienda.gob.es/TEAC/DYCTEA/criterio.aspx?id=[SEDE]/[RECLAMACION]/[AÑO]/00/0/1)
 3. **Si es sentencia con ECLI conocido** → Búsqueda Google con ECLI:
-   \`https://www.google.com/search?q="[ECLI]"\`
-4. **Si la resolución fue encontrada en un artículo de fuente secundaria fiable** → Enlaza a ese artículo.
+   [Buscar ECLI en Google](https://www.google.com/search?q="[ECLI]")
+4. **Si la resolución fue encontrada en un artículo de fuente secundaria fiable** → Enlaza a ese artículo: [Ver artículo fuente](url_artículo)
 5. **Si no hay identificador preciso** → Búsqueda Google pre-construida sin comillas excesivas:
-   \`https://www.google.com/search?q=[tribunal]+[fecha]+[términos_clave]\`
-6. **Para CENDOJ como último recurso** → \`https://www.poderjudicial.es/search/indexAN.jsp\` con instrucciones de búsqueda.
+   [Buscar en Google](https://www.google.com/search?q=[tribunal]+[fecha]+[términos_clave])
+6. **Para CENDOJ como último recurso** → [Buscar en CENDOJ](https://www.poderjudicial.es/search/indexAN.jsp) con instrucciones de búsqueda.
+
+**REGLA CRÍTICA DE FORMATO:** Todos los enlaces de verificación DEBEN escribirse como links markdown clicables con formato [texto descriptivo](url). NUNCA escribas URLs entre backticks ni como texto plano. El abogado debe poder hacer clic directamente para verificar.
 
 ### SALVAGUARDAS — REGLAS ANTI-ALUCINACIÓN
 
