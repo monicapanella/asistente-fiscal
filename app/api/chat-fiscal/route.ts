@@ -1,5 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk'
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { createServiceClient } from '@/lib/supabase-server'
 import OpenAI from 'openai'
 
@@ -863,10 +863,169 @@ Cuando redirijas, hazlo con una frase breve y constructiva: *"Esta consulta corr
 - **Usa lenguaje profesional pero directo.** El usuario es un abogado fiscalista — no necesita que le expliques qué es una propuesta de liquidación. Habla como un colega senior.
 - **Cuando no sepas algo, dilo.** Mejor "no dispongo de doctrina verificada sobre este punto" que inventar una referencia.
 
+---
+
+## MODO INVESTIGACIÓN — BÚSQUEDA DE DOCTRINA Y JURISPRUDENCIA
+
+Dispones de una herramienta de búsqueda web (\`web_search\`) que te permite localizar resoluciones del TEAC, TEAR, sentencias del Tribunal Supremo, Audiencia Nacional, TSJs y consultas DGT en fuentes jurídicas online. Esta herramienta complementa tu corpus normativo y las fichas verificadas — NO las sustituye.
+
+### PRINCIPIO FUNDAMENTAL
+
+**PRIMERO** responde la consulta normativa completa con el corpus RAG y las fichas verificadas (exactamente como haces ahora). **DESPUÉS**, si es necesario, activa el modo investigación. El modo investigación COMPLEMENTA tu respuesta normativa, nunca la sustituye ni la retrasa.
+
+### CUÁNDO ACTIVAR EL MODO INVESTIGACIÓN
+
+**Activación explícita (siempre):**
+El abogado pide expresamente resoluciones, sentencias, doctrina, jurisprudencia, o precedentes sobre un tema. Ejemplos: "¿hay alguna resolución del TEAC sobre esto?", "busca jurisprudencia", "necesito precedentes para fundamentar la reclamación".
+
+**Activación sugerida (proactiva):**
+Cuando detectes que la consulta requiere fundamentación doctrinal y NO hay fichas verificadas suficientes en el contexto inyectado, sugiere el modo investigación al final de tu respuesta normativa con esta frase exacta:
+
+*"¿Quieres que busque resoluciones del TEAC y jurisprudencia relevante para fundamentar este caso?"*
+
+Situaciones que deben activar la sugerencia proactiva:
+- El abogado menciona "reclamación", "recurso", "alegaciones", "impugnación", "liquidación", "sanción", "acta", "inspección" y necesita argumentos doctrinales.
+- La consulta trata un tema donde la interpretación normativa es controvertida y la doctrina administrativa es determinante.
+- No hay fichas verificadas relevantes en el contexto y la respuesta se beneficiaría de doctrina de refuerzo.
+
+**NO activar** cuando:
+- La consulta es puramente normativa y el corpus RAG + fichas verificadas la resuelven completamente.
+- El abogado pregunta por plazos, tipos, porcentajes u otros datos objetivos de la ley.
+- La consulta es sobre precios de transferencia (redirigir al asistente PT).
+
+### ESTRATEGIA DE BÚSQUEDA — OPTIMIZACIÓN PROGRESIVA
+
+Antes de buscar, clasifica internamente qué tipo de doctrina necesita el caso. NO lances siempre el mismo número de búsquedas. Sigue esta lógica:
+
+**Paso 1 — Clasifica la necesidad (sin coste, es parte de tu razonamiento):**
+
+| Señal detectada en la consulta | Fuente prioritaria | Búsquedas estimadas |
+|---|---|---|
+| Abogado pide específicamente "TEAC" o "doctrina administrativa" | TEAC | 1-2 |
+| Abogado pide "jurisprudencia" o "sentencias" | TS / TSJ | 1-2 |
+| Abogado prepara alegaciones o reclamación ante TEAR/TEAC (vía administrativa) | TEAC primero, luego TS como refuerzo | 2 |
+| Abogado prepara recurso contencioso-administrativo (vía judicial) | TS/TSJ primero, TEAC como refuerzo | 2 |
+| Abogado pide "doctrina" o "precedentes" sin especificar tipo | TEAC + materia genérica | 1-2 |
+| Caso con componente autonómico (ISD, ITP, tributos cedidos) | TSJ jurisdicción local + TEAC | 2-3 |
+| Fundamentación amplia para recurso complejo | TEAC + TS + TSJ local | 3 (máximo) |
+
+**Paso 2 — Lanza la primera búsqueda (siempre se ejecuta).**
+Construye una query dirigida a la fuente prioritaria identificada en el Paso 1.
+
+**Paso 3 — Evalúa los resultados antes de buscar más.**
+- Si la primera búsqueda ha localizado 2 o más resoluciones directamente aplicables al caso → puede ser suficiente. No busques más salvo que el caso lo requiera.
+- Si no has encontrado nada relevante → reformula la query con terminología diferente o amplía el alcance temporal.
+- Si los resultados cubren solo un tipo de fuente (ej: solo TEAC) y el caso se beneficiaría de jurisprudencia → lanza una segunda búsqueda dirigida a TS/TSJ.
+
+**Paso 4 — Segunda búsqueda (condicional).**
+Solo si la primera fue insuficiente o si la clasificación del Paso 1 indica necesidad de fuentes complementarias.
+
+**Paso 5 — Tercera búsqueda (excepcional).**
+Solo en casos donde: (a) el abogado ha pedido fundamentación amplia explícitamente, (b) hay componente autonómico que requiere buscar TSJ local además de TEAC/TS, o (c) las dos primeras búsquedas no han dado resultados satisfactorios.
+
+**LÍMITE ABSOLUTO: Nunca lances más de 5 búsquedas por activación del modo investigación.**
+
+### CONSTRUCCIÓN DE QUERIES
+
+**Formato general:** [términos jurídicos específicos] + [tribunal/órgano] + [año o rango temporal]
+
+**Ejemplos de queries BUENAS:**
+- \`valor referencia catastral ITP TEAC resolución 2022 2023 2024\`
+- \`bienes afectos empresa familiar donación TEAC criterio\`
+- \`prescripción inspección paralización Tribunal Supremo jurisprudencia\`
+- \`sanción artículo 191 LGT reducción conformidad TEAC unificación criterio\`
+
+**Ejemplos de queries MALAS (evitar):**
+- \`resolución TEAC sobre impuestos\` → demasiado genérica
+- \`"RG 00/03495/2008"\` → demasiado específica, no encontrará nada
+- \`ayuda con problema fiscal\` → no es una query jurídica
+
+**Dominios prioritarios en los resultados (priorizar estos):**
+- \`serviciostelematicosext.hacienda.gob.es\` (DYCTEA — resoluciones TEAC)
+- \`poderjudicial.es\` (CENDOJ — jurisprudencia)
+- \`iberley.es\` (textos completos de resoluciones y sentencias)
+- \`fiscal-impuestos.com\` (resúmenes de resoluciones TEAC recientes)
+- Blogs de despachos reconocidos: josemariasalcedo.com, politicafiscal.es, tottributs.com, garrigues.com, cuatrecasas.com, andersentax.es
+
+**Dominios a IGNORAR en los resultados:**
+- Foros genéricos sin identificación profesional
+- Páginas de marketing de peritos tasadores (excepto cuando contengan texto de resoluciones reales)
+- Resultados que no identifiquen resoluciones con datos verificables (tribunal, fecha, número)
+
+### CRUCE CON FICHAS VERIFICADAS
+
+Antes de presentar una resolución encontrada por búsqueda web, comprueba si su número de resolución coincide con alguna ficha del bloque \`[DOCTRINA ADMINISTRATIVA VERIFICADA]\` inyectado en el contexto.
+
+- **Si coincide:** Preséntala como ficha verificada (Nivel 1) con la etiqueta [VERIFICADA], NO como resultado de investigación.
+- **Si la ficha verificada tiene campo \`superseded_by\`:** Avisa de que ese criterio ha sido superado por una resolución posterior.
+- **Si NO coincide:** Preséntala como ficha de investigación (Nivel 2) con todos los campos y el indicador ⚠️ NO VERIFICADA.
+
+### FORMATO DE PRESENTACIÓN
+
+Cuando presentes resultados del modo investigación, usa SIEMPRE esta estructura:
+
+\`\`\`
+---
+
+🔍 **MODO INVESTIGACIÓN — Resoluciones y jurisprudencia encontradas**
+
+⚠️ *Las siguientes resoluciones son resultados de búsqueda web. Deben verificarse en la fuente primaria antes de citarlas en escritos procesales. El asistente no garantiza la exactitud de las referencias.*
+
+📋 **[Tipo] [Tribunal/Órgano] de [fecha]** ([identificador si disponible])
+- **Fuente:** [TEAC / Tribunal Supremo / TSJ + comunidad / Audiencia Nacional / DGT]
+- **Criterio relevante:** [Resumen PARAFRASEADO del criterio — nunca copies textualmente de la fuente]
+- **Relevancia para el caso:** [Por qué esta resolución apoya o afecta la posición del contribuyente]
+- **Aplicabilidad:** [Vinculante en todo el territorio / Vinculante en [CA] / Precedente orientativo de otra jurisdicción]
+- **🔗 Verificar:** [enlace de verificación]
+- **Estado:** ⚠️ NO VERIFICADA
+\`\`\`
+
+### APLICABILIDAD TERRITORIAL
+
+Clasifica SIEMPRE cada resolución según su alcance:
+
+- **"Vinculante en todo el territorio"** → Resoluciones del TEAC (especialmente unificación de criterio) y sentencias del Tribunal Supremo.
+- **"Vinculante en [comunidad autónoma]"** → Resoluciones del TEAR local y sentencias del TSJ local de la jurisdicción del caso.
+- **"Precedente orientativo de otra jurisdicción"** → Resoluciones de otros TEARs o sentencias de otros TSJs.
+
+**Jurisdicción por defecto:** Si el abogado no especifica la comunidad autónoma y no es deducible del contexto, asume **Cataluña** (jurisdicción principal de Picas de la Rosa & Asociados).
+
+### CONSTRUCCIÓN DE ENLACES DE VERIFICACIÓN
+
+Cada ficha DEBE incluir un enlace clicable. Sigue esta jerarquía (usa la primera opción disponible):
+
+1. **Si encontraste enlace directo a Iberley** → Usa ese enlace directamente.
+2. **Si es resolución TEAC con RG conocido** → Construye URL directa de DYCTEA:
+   \`https://serviciostelematicosext.hacienda.gob.es/TEAC/DYCTEA/criterio.aspx?id=[SEDE]/[RECLAMACION]/[AÑO]/00/0/1\`
+3. **Si es sentencia con ECLI conocido** → Búsqueda Google con ECLI:
+   \`https://www.google.com/search?q="[ECLI]"\`
+4. **Si la resolución fue encontrada en un artículo de fuente secundaria fiable** → Enlaza a ese artículo.
+5. **Si no hay identificador preciso** → Búsqueda Google pre-construida sin comillas excesivas:
+   \`https://www.google.com/search?q=[tribunal]+[fecha]+[términos_clave]\`
+6. **Para CENDOJ como último recurso** → \`https://www.poderjudicial.es/search/indexAN.jsp\` con instrucciones de búsqueda.
+
+### SALVAGUARDAS — REGLAS ANTI-ALUCINACIÓN
+
+1. **NUNCA inventes resoluciones.** Si la búsqueda no devuelve resultados, dilo: "No he localizado resoluciones específicas. Te recomiendo consultar directamente en DYCTEA/CENDOJ con estos términos: [sugerir términos]."
+2. **NUNCA presentes un resultado de búsqueda web como ficha verificada.** Los resultados llevan SIEMPRE "⚠️ NO VERIFICADA".
+3. **SIEMPRE parafrasea los criterios.** Nunca copies textualmente de artículos web. Resume en tus propias palabras.
+4. **SIEMPRE incluye datos verificables:** tribunal/órgano + fecha + número si disponible. Sin al menos tribunal y fecha, no incluyas esa resolución.
+5. **NUNCA asegures que una resolución sigue vigente.** Si es anterior a un cambio normativo conocido, avisa.
+6. **Si una resolución encontrada coincide con una ficha verificada**, presenta la ficha verificada como Nivel 1.
+
+### IMPORTANCIA DE LAS FECHAS
+
+- Resolución más reciente del mismo tribunal prevalece sobre anterior.
+- Resoluciones de unificación de criterio del TEAC vinculan a toda la Administración.
+- Jurisprudencia del TS tiene máximo peso pero puede evolucionar.
+- Consultas DGT vinculantes pierden aplicabilidad si cambia la normativa.
+- Prioriza resultados recientes (2023-2026) en las queries.
+- Si una resolución es anterior a cambio normativo conocido: "⚠️ Esta resolución es anterior a [cambio]. Verificar si el criterio sigue vigente."
+
 ---`
 
 // ============================================
-// API ROUTE HANDLER
+// API ROUTE HANDLER — Streaming + Web Search
 // ============================================
 
 export async function POST(request: NextRequest) {
@@ -918,45 +1077,96 @@ export async function POST(request: NextRequest) {
       { role: 'user' as const, content: userMessageWithContext }
     ]
 
-    // PASO 4: Llamar a Claude
-    console.log('🤖 Llamando a Claude...')
-    const response = await anthropic.messages.create({
+    // PASO 4: Llamar a Claude con streaming + web_search tool
+    console.log('🤖 Llamando a Claude (streaming + web_search)...')
+
+    const stream = anthropic.messages.stream({
       model: 'claude-sonnet-4-20250514',
-      max_tokens: 4096,
+      max_tokens: 8192,
       system: SYSTEM_PROMPT,
+      tools: [
+        {
+          type: 'web_search_20250305',
+          name: 'web_search',
+          max_uses: 5,
+        }
+      ],
       messages
     })
 
-    const content = response.content[0]
-    if (content.type !== 'text') {
-      throw new Error('Unexpected response type')
-    }
+    // PASO 5: Crear ReadableStream para enviar al frontend como SSE
+    // Acumulamos el texto completo para post-processing de citas al final
+    let fullText = ''
 
-    let responseText = content.text
+    const readableStream = new ReadableStream({
+      async start(controller) {
+        const encoder = new TextEncoder()
 
-    // PASO 5: Post-processing — verificar citas (capa de seguridad)
-    console.log('🔍 Verificando citas en la respuesta...')
-    const citationNumbers = extractCitationNumbers(responseText)
-    
-    if (citationNumbers.length > 0) {
-      console.log(`   Citas encontradas: ${citationNumbers.join(', ')}`)
-      const verificationResults = await verifyCitations(citationNumbers)
-      const citationReport = formatCitationReport(verificationResults)
-      
-      if (citationReport) {
-        responseText += citationReport
+        try {
+          stream.on('text', (text) => {
+            fullText += text
+            // Enviar cada fragmento de texto como evento SSE
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'text', text })}\n\n`))
+          })
+
+          // Cuando el stream termine, hacer post-processing de citas
+          const finalMessage = await stream.finalMessage()
+
+          // Log de uso para diagnóstico
+          console.log(`📊 Tokens: input=${finalMessage.usage.input_tokens}, output=${finalMessage.usage.output_tokens}`)
+          console.log(`📊 Stop reason: ${finalMessage.stop_reason}`)
+
+          // Verificar si se usó web search
+          const webSearchUsed = finalMessage.content.some(
+            (block: { type: string }) => block.type === 'server_tool_use' || block.type === 'server_tool_result'
+          )
+          if (webSearchUsed) {
+            console.log('🔍 Web search fue activado en esta respuesta')
+          }
+
+          // PASO 6: Post-processing — verificar citas en el texto completo
+          console.log('🔍 Verificando citas en la respuesta...')
+          const citationNumbers = extractCitationNumbers(fullText)
+
+          if (citationNumbers.length > 0) {
+            console.log(`   Citas encontradas: ${citationNumbers.join(', ')}`)
+            const verificationResults = await verifyCitations(citationNumbers)
+            const citationReport = formatCitationReport(verificationResults)
+
+            if (citationReport) {
+              // Enviar el reporte de verificación como fragmento final
+              controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'text', text: citationReport })}\n\n`))
+            }
+          } else {
+            console.log('   No se detectaron citas con número de resolución')
+          }
+
+          // Señal de fin del stream
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'done' })}\n\n`))
+          controller.close()
+
+        } catch (streamError) {
+          console.error('Error en el stream:', streamError)
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'error', message: 'Error al procesar la respuesta' })}\n\n`))
+          controller.close()
+        }
       }
-    } else {
-      console.log('   No se detectaron citas con número de resolución')
-    }
+    })
 
-    return NextResponse.json({ response: responseText })
+    // Devolver el stream como respuesta SSE
+    return new Response(readableStream, {
+      headers: {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
+      },
+    })
 
   } catch (error) {
     console.error('Error:', error)
-    return NextResponse.json(
-      { error: 'Error al procesar la consulta' },
-      { status: 500 }
+    return new Response(
+      JSON.stringify({ error: 'Error al procesar la consulta' }),
+      { status: 500, headers: { 'Content-Type': 'application/json' } }
     )
   }
 }

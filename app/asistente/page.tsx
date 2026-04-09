@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import ReactMarkdown from 'react-markdown'
@@ -204,6 +204,12 @@ export default function AsistentePage() {
   const [activeMode, setActiveMode] = useState<AssistantMode>('pt')
   const [showSwitchConfirm, setShowSwitchConfirm] = useState<AssistantMode | null>(null)
   const messageRefs = useRef<(HTMLDivElement | null)[]>([])
+  const chatEndRef = useRef<HTMLDivElement | null>(null)
+
+  // Auto-scroll al final cuando llegan nuevos mensajes o se actualiza el contenido (streaming)
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [messages])
 
   const config = MODE_CONFIG[activeMode]
 
@@ -261,8 +267,76 @@ export default function AsistentePage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message: userMessage, history: messages })
       })
-      const data = await response.json()
-      setMessages(prev => [...prev, { role: 'assistant', content: data.response }])
+
+      const contentType = response.headers.get('Content-Type') || ''
+
+      if (contentType.includes('text/event-stream')) {
+        // STREAMING (endpoint fiscal v3.2)
+        // Añadir mensaje vacío del asistente que iremos llenando
+        setMessages(prev => [...prev, { role: 'assistant', content: '' }])
+        setLoading(false) // Quitar "Analizando consulta..." porque ya se ve el texto llegando
+
+        const reader = response.body?.getReader()
+        if (!reader) throw new Error('No se pudo leer el stream')
+
+        const decoder = new TextDecoder()
+        let buffer = ''
+
+        while (true) {
+          const { done, value } = await reader.read()
+          if (done) break
+
+          buffer += decoder.decode(value, { stream: true })
+
+          // Procesar líneas SSE completas del buffer
+          const lines = buffer.split('\n\n')
+          // La última parte puede estar incompleta, la guardamos en el buffer
+          buffer = lines.pop() || ''
+
+          for (const line of lines) {
+            if (!line.startsWith('data: ')) continue
+            const jsonStr = line.slice(6) // quitar "data: "
+            try {
+              const event = JSON.parse(jsonStr)
+              if (event.type === 'text') {
+                // Añadir texto al último mensaje del asistente
+                setMessages(prev => {
+                  const updated = [...prev]
+                  const lastMsg = updated[updated.length - 1]
+                  if (lastMsg && lastMsg.role === 'assistant') {
+                    updated[updated.length - 1] = {
+                      ...lastMsg,
+                      content: lastMsg.content + event.text
+                    }
+                  }
+                  return updated
+                })
+              } else if (event.type === 'error') {
+                setMessages(prev => {
+                  const updated = [...prev]
+                  const lastMsg = updated[updated.length - 1]
+                  if (lastMsg && lastMsg.role === 'assistant') {
+                    updated[updated.length - 1] = {
+                      ...lastMsg,
+                      content: lastMsg.content + '\n\nError: ' + event.message
+                    }
+                  }
+                  return updated
+                })
+              }
+              // type === 'done' → no hacer nada, el stream ya se cierra
+            } catch {
+              // JSON parse error en un fragmento parcial, ignorar
+            }
+          }
+        }
+
+      } else {
+        // JSON (endpoint PT u otros — comportamiento original)
+        const data = await response.json()
+        setMessages(prev => [...prev, { role: 'assistant', content: data.response }])
+      }
+
     } catch {
       setMessages(prev => [...prev, { role: 'assistant', content: 'Error al conectar con el asistente. Inténtalo de nuevo.' }])
     }
@@ -585,6 +659,9 @@ export default function AsistentePage() {
             </div>
           </div>
         )}
+
+        {/* Anchor invisible para auto-scroll */}
+        <div ref={chatEndRef} />
       </div>
 
       {/* INPUT */}
