@@ -584,6 +584,7 @@ Redirige cuando la pregunta sea sobre:
 
 export async function POST(request: NextRequest) {
   try {
+    const startTime = Date.now()
     const { message, history } = await request.json()
 
     // PASO 1: Buscar contexto relevante en el corpus (RAG semántico)
@@ -661,6 +662,31 @@ export async function POST(request: NextRequest) {
       }
     } else {
       console.log('   No se detectaron citas con número de resolución')
+    }
+
+    // PASO 6: Logging en usage_logs (no bloquea la respuesta)
+    try {
+      const supabaseLog = createServiceClient()
+
+      await supabaseLog.from('usage_logs').insert({
+        assistant_type: 'pt',
+        query_text: message,
+        investigation_mode_activated: false,
+        web_search_queries: null,
+        web_search_count: 0,
+        web_search_cost_estimate: 0,
+        rag_chunks_used: ragContext ? ragContext.split('---').length : 0,
+        verified_citations_used: relevantCitations.length > 0 
+          ? relevantCitations.map((c: VerifiedCitation) => c.resolution_number) 
+          : null,
+        investigation_results_count: 0,
+        response_time_ms: Date.now() - startTime,
+        input_tokens: response.usage.input_tokens,
+        output_tokens: response.usage.output_tokens,
+      })
+      console.log('📊 usage_log PT registrado')
+    } catch (logError) {
+      console.error('⚠️ Error registrando usage_log PT (no afecta la respuesta):', logError)
     }
 
     return NextResponse.json({ response: responseText })
