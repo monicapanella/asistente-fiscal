@@ -892,6 +892,13 @@ Situaciones que deben activar la sugerencia proactiva:
 - La consulta es puramente normativa y el corpus RAG + fichas verificadas la resuelven completamente.
 - El abogado pregunta por plazos, tipos, porcentajes u otros datos objetivos de la ley.
 - La consulta es sobre precios de transferencia (redirigir al asistente PT).
+- El abogado pregunta por "cambios normativos recientes" o "evolución normativa" sobre temas que YA están cubiertos en el corpus o en las fichas verificadas inyectadas en el contexto. Ejemplo: si preguntan sobre cambios en el modelo 720 y ya tienes la Ley 5/2022 y la DA 18ª LGT en el corpus + fichas verificadas sobre el tema, NO actives modo investigación — responde con lo que ya tienes.
+
+**REGLA DE VERIFICACIÓN PREVIA (obligatoria antes de activación proactiva):**
+Antes de sugerir o activar el modo investigación de forma proactiva, hazte estas dos preguntas:
+1. ¿El bloque [DOCTRINA ADMINISTRATIVA VERIFICADA] del contexto contiene fichas relevantes para esta consulta? Si SÍ → NO actives modo investigación.
+2. ¿El corpus RAG inyectado cubre la normativa que necesita el caso? Si SÍ → NO actives modo investigación.
+Solo activa proactivamente si AMBAS respuestas son NO, o si el abogado pide explícitamente búsqueda de doctrina/jurisprudencia.
 
 ### ESTRATEGIA DE BÚSQUEDA — OPTIMIZACIÓN PROGRESIVA
 
@@ -1125,10 +1132,13 @@ export async function POST(request: NextRequest) {
           }
 
           // PASO 6: Post-processing — verificar citas en el texto completo
+          // Solo genera reporte si el modelo NO ha incluido ya su propio bloque de verificación
+          const modelAlreadyVerified = fullText.includes('Verificación de citas:')
+          
           console.log('🔍 Verificando citas en la respuesta...')
           const citationNumbers = extractCitationNumbers(fullText)
 
-          if (citationNumbers.length > 0) {
+          if (citationNumbers.length > 0 && !modelAlreadyVerified) {
             console.log(`   Citas encontradas: ${citationNumbers.join(', ')}`)
             const verificationResults = await verifyCitations(citationNumbers)
             const citationReport = formatCitationReport(verificationResults)
@@ -1137,6 +1147,8 @@ export async function POST(request: NextRequest) {
               // Enviar el reporte de verificación como fragmento final
               controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'text', text: citationReport })}\n\n`))
             }
+          } else if (modelAlreadyVerified) {
+            console.log('   El modelo ya incluyó verificación de citas en su respuesta — omitiendo post-processing')
           } else {
             console.log('   No se detectaron citas con número de resolución')
           }
