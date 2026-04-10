@@ -465,7 +465,7 @@ async function multiQuerySearch(
 }
 
 // ============================================
-// SYSTEM PROMPT — Asistente Fiscal General v3.1
+// SYSTEM PROMPT — Asistente Fiscal General v3.3
 // ============================================
 
 const SYSTEM_PROMPT = `## IDENTIDAD Y ROL

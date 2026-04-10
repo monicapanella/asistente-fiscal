@@ -339,7 +339,7 @@ function parseInvestigationCards(text: string): InvestigationCard[] {
 }
 
 // ============================================
-// SYSTEM PROMPT — Asistente PT v3.2
+// SYSTEM PROMPT — Asistente PT v3.3
 // ============================================
 
 const SYSTEM_PROMPT = `Eres el Asistente IA de Precios de Transferencia de Picas de la Rosa & Asociados, un despacho fiscal español especializado en fiscalidad con práctica en precios de transferencia.
