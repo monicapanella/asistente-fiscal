@@ -284,6 +284,61 @@ function formatCitationReport(verificationResults: {
 }
 
 // ============================================
+// PARSEO DE FICHAS DE INVESTIGACIÓN ESTRUCTURADAS
+// ============================================
+
+interface InvestigationCard {
+  id: string
+  source: string
+  resolution_number: string | null
+  date: string | null
+  criterion: string
+  relevance: string
+  applicability: string
+  verification_url: string | null
+  title: string
+  verified: boolean
+  source_level: 1 | 2
+}
+
+function parseInvestigationCards(text: string): InvestigationCard[] {
+  const cards: InvestigationCard[] = []
+  const cardPattern = /<!--INVESTIGATION_CARD_START-->[ \t]*\n(.+)\n[ \t]*<!--INVESTIGATION_CARD_END-->/g
+  
+  let match
+  while ((match = cardPattern.exec(text)) !== null) {
+    try {
+      const jsonStr = match[1].trim()
+      const parsed = JSON.parse(jsonStr)
+      
+      // Validar campos mínimos obligatorios
+      if (!parsed.source || !parsed.criterion) {
+        console.warn('⚠️ Ficha de investigación con campos faltantes, omitiendo')
+        continue
+      }
+
+      cards.push({
+        id: crypto.randomUUID(),
+        source: parsed.source || 'DESCONOCIDO',
+        resolution_number: parsed.resolution_number || null,
+        date: parsed.date || null,
+        criterion: parsed.criterion || '',
+        relevance: parsed.relevance || '',
+        applicability: parsed.applicability || '',
+        verification_url: parsed.verification_url || null,
+        title: parsed.title || `${parsed.source} ${parsed.date || ''}`.trim(),
+        verified: false,
+        source_level: 2,
+      })
+    } catch (parseError) {
+      console.warn('⚠️ Error parseando ficha de investigación:', parseError)
+    }
+  }
+
+  return cards
+}
+
+// ============================================
 // SYSTEM PROMPT — Asistente PT v3.2
 // ============================================
 
@@ -687,21 +742,36 @@ Antes de presentar una resolución encontrada por búsqueda web, comprueba si su
 
 ### FORMATO DE PRESENTACIÓN
 
-Cuando presentes resultados del modo investigación, usa SIEMPRE esta estructura. IMPORTANTE: Los enlaces de verificación deben ser links markdown clicables con formato [texto](url), NUNCA entre backticks.
+Cuando presentes resultados del modo investigación, sigue estas DOS instrucciones obligatorias:
 
----
+**INSTRUCCIÓN 1 — Introducción narrativa (texto normal):**
+Antes de las fichas, escribe un párrafo introductorio en texto normal explicando qué has buscado y qué has encontrado. Ejemplo: "He localizado las siguientes resoluciones relevantes para tu caso..." Este texto se muestra directamente al abogado.
 
-🔍 **MODO INVESTIGACIÓN — Resoluciones y jurisprudencia PT encontradas**
+**INSTRUCCIÓN 2 — Fichas estructuradas (formato obligatorio):**
+Cada resolución o sentencia encontrada DEBE emitirse en el siguiente formato EXACTO, delimitado por marcadores HTML. Emite UNA ficha por resolución. No uses otro formato para las fichas.
 
-⚠️ *Las siguientes resoluciones son resultados de búsqueda web. Deben verificarse en la fuente primaria antes de citarlas en escritos procesales. El asistente no garantiza la exactitud de las referencias.*
+\`\`\`
+<!--INVESTIGATION_CARD_START-->
+{"source":"TEAC","resolution_number":"00/03495/2022","date":"15/03/2024","criterion":"Resumen PARAFRASEADO del criterio — nunca copies textualmente","relevance":"Por qué esta resolución apoya o afecta la posición del contribuyente en materia de PT","applicability":"Vinculante en todo el territorio","verification_url":"https://...","title":"Resolución TEAC de 15/03/2024"}
+<!--INVESTIGATION_CARD_END-->
+\`\`\`
 
-📋 **[Tipo] [Tribunal/Órgano] de [fecha]** ([identificador si disponible])
-- **Fuente:** [TEAC / Tribunal Supremo / Audiencia Nacional / DGT]
-- **Criterio relevante:** [Resumen PARAFRASEADO del criterio — nunca copies textualmente de la fuente]
-- **Relevancia para el caso:** [Por qué esta resolución apoya o afecta la posición del contribuyente en materia de PT]
-- **Aplicabilidad:** [Vinculante en todo el territorio / Precedente orientativo]
-- 🔗 [Verificar en fuente primaria](url_de_verificación) — SIEMPRE como link markdown clicable, NUNCA entre backticks
-- **Estado:** ⚠️ NO VERIFICADA
+**Campos obligatorios del JSON:**
+- \`source\`: "TEAC" | "DGT" | "TS" | "AN" | "TSJ" | "TEAR"
+- \`resolution_number\`: número de resolución si disponible (formato "00/XXXXX/YYYY" para TEAC, "VXXXX-XX" para DGT), o null si no hay
+- \`date\`: fecha de la resolución en formato "DD/MM/YYYY", o null si no es conocida
+- \`criterion\`: resumen PARAFRASEADO del criterio (NUNCA copies textualmente de la fuente)
+- \`relevance\`: por qué esta resolución es relevante para el caso concreto de PT
+- \`applicability\`: "Vinculante en todo el territorio" | "Precedente orientativo"
+- \`verification_url\`: URL de verificación (construida según la jerarquía de enlaces descrita más abajo), o null
+- \`title\`: título descriptivo breve (ej: "Resolución TEAC de 15/03/2024", "STS 1234/2023 de 05/06/2023")
+
+**Reglas críticas de formato:**
+- El JSON debe estar en UNA SOLA LÍNEA entre los marcadores (sin saltos de línea dentro del JSON)
+- Los marcadores \`<!--INVESTIGATION_CARD_START-->\` y \`<!--INVESTIGATION_CARD_END-->\` deben estar cada uno en su propia línea
+- Emite las fichas DESPUÉS de tu análisis narrativo, no intercaladas con el texto
+- Si una resolución coincide con una ficha verificada del contexto, NO emitas ficha estructurada — ya está presentada como doctrina verificada en tu respuesta narrativa
+- Si no has encontrado resoluciones relevantes, no emitas ninguna ficha — simplemente indícalo en el texto narrativo
 
 ### APLICABILIDAD TERRITORIAL EN PT
 
@@ -819,7 +889,7 @@ export async function POST(request: NextRequest) {
     })
 
     // PASO 5: Crear ReadableStream para enviar al frontend como SSE
-    // Acumulamos el texto completo para post-processing de citas al final
+    // Acumulamos el texto completo para post-processing al final
     let fullText = ''
 
     const readableStream = new ReadableStream({
@@ -833,7 +903,7 @@ export async function POST(request: NextRequest) {
             controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'text', text })}\n\n`))
           })
 
-          // Cuando el stream termine, hacer post-processing de citas
+          // Cuando el stream termine, hacer post-processing
           const finalMessage = await stream.finalMessage()
 
           // Log de uso para diagnóstico
@@ -848,24 +918,36 @@ export async function POST(request: NextRequest) {
             console.log('🔍 Web search fue activado en esta respuesta PT')
           }
 
-          // PASO 6: Post-processing — verificar citas en el texto completo
-          // Solo genera reporte si el modelo NO ha incluido ya su propio bloque de verificación
-          const modelAlreadyVerified = fullText.includes('Verificación de citas:')
-          
+          // PASO 6: Post-processing — extraer fichas de investigación estructuradas
+          const investigationCards = parseInvestigationCards(fullText)
+          if (investigationCards.length > 0) {
+            console.log(`📋 Fichas de investigación PT extraídas: ${investigationCards.length}`)
+            
+            // Cruzar con verified_citations para marcar nivel
+            for (const card of investigationCards) {
+              if (card.resolution_number) {
+                const isVerified = relevantCitations.some(
+                  (c: VerifiedCitation) => c.resolution_number === card.resolution_number
+                )
+                card.verified = isVerified
+                card.source_level = isVerified ? 1 : 2
+              }
+              // Emitir cada ficha como evento SSE estructurado
+              controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'investigation_card', card })}\n\n`))
+            }
+          }
+
+          // PASO 6.5: Post-processing — verificar citas en el texto completo
           console.log('🔍 Verificando citas en la respuesta...')
           const citationNumbers = extractCitationNumbers(fullText)
 
-          if (citationNumbers.length > 0 && !modelAlreadyVerified) {
+          if (citationNumbers.length > 0) {
             console.log(`   Citas encontradas: ${citationNumbers.join(', ')}`)
             const verificationResults = await verifyCitations(citationNumbers)
-            const citationReport = formatCitationReport(verificationResults)
-
-            if (citationReport) {
-              // Enviar el reporte de verificación como fragmento final
-              controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'text', text: citationReport })}\n\n`))
+            
+            if (verificationResults.length > 0) {
+              controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'verification', results: verificationResults })}\n\n`))
             }
-          } else if (modelAlreadyVerified) {
-            console.log('   El modelo ya incluyó verificación de citas en su respuesta — omitiendo post-processing')
           } else {
             console.log('   No se detectaron citas con número de resolución')
           }
@@ -891,9 +973,7 @@ export async function POST(request: NextRequest) {
               verified_citations_used: relevantCitations.length > 0 
                 ? relevantCitations.map((c: VerifiedCitation) => c.resolution_number) 
                 : null,
-              investigation_results_count: webSearchUsed 
-                ? finalMessage.content.filter((block: { type: string }) => block.type === 'server_tool_result').length 
-                : 0,
+              investigation_results_count: investigationCards.length,
               response_time_ms: Date.now() - startTime,
               input_tokens: finalMessage.usage.input_tokens,
               output_tokens: finalMessage.usage.output_tokens,

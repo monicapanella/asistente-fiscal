@@ -21,6 +21,29 @@ interface ModeConfig {
   accentColor: string
 }
 
+interface InvestigationCard {
+  id: string
+  source: string
+  resolution_number: string | null
+  date: string | null
+  criterion: string
+  relevance: string
+  applicability: string
+  verification_url: string | null
+  title: string
+  verified: boolean
+  source_level: 1 | 2
+}
+
+interface VerificationResult {
+  number: string
+  verified: boolean
+  status: string
+  subject: string | null
+}
+
+type FeedbackStatus = 'useful' | 'not_relevant' | 'verified' | null
+
 const MODE_CONFIG: Record<AssistantMode, ModeConfig> = {
   pt: {
     label: 'Precios de Transferencia',
@@ -195,6 +218,12 @@ function getCitationLinks(citation: string) {
   }
 }
 
+// ── Limpiar marcadores de fichas estructuradas del texto visible ──────────
+function cleanCardMarkers(text: string): string {
+  // Eliminar bloques <!--INVESTIGATION_CARD_START-->...<!--INVESTIGATION_CARD_END--> del texto
+  return text.replace(/<!--INVESTIGATION_CARD_START-->[ \t]*\n.+\n[ \t]*<!--INVESTIGATION_CARD_END-->/g, '').trim()
+}
+
 export default function AsistentePage() {
   const [messages, setMessages] = useState<{role: string, content: string}[]>([])
   const [input, setInput] = useState('')
@@ -205,6 +234,12 @@ export default function AsistentePage() {
   const [showSwitchConfirm, setShowSwitchConfirm] = useState<AssistantMode | null>(null)
   const messageRefs = useRef<(HTMLDivElement | null)[]>([])
   const chatEndRef = useRef<HTMLDivElement | null>(null)
+
+  // Estado para fichas de investigación y verificación (por índice de mensaje)
+  const [investigationCards, setInvestigationCards] = useState<Record<number, InvestigationCard[]>>({})
+  const [verificationResults, setVerificationResults] = useState<Record<number, VerificationResult[]>>({})
+  const [cardFeedback, setCardFeedback] = useState<Record<string, FeedbackStatus>>({})
+  const [feedbackSending, setFeedbackSending] = useState<Record<string, boolean>>({})
 
   // Auto-scroll al final cuando llegan nuevos mensajes o se actualiza el contenido (streaming)
   useEffect(() => {
@@ -228,6 +263,10 @@ export default function AsistentePage() {
       setMessages([])
       setExpandedCitations(null)
       setCopiedIndex(null)
+      setInvestigationCards({})
+      setVerificationResults({})
+      setCardFeedback({})
+      setFeedbackSending({})
       setShowSwitchConfirm(null)
     }
   }
@@ -255,6 +294,30 @@ export default function AsistentePage() {
     router.push('/login')
   }
 
+  async function handleFeedback(card: InvestigationCard, status: FeedbackStatus, messageIndex: number) {
+    if (!status || feedbackSending[card.id]) return
+    
+    setFeedbackSending(prev => ({ ...prev, [card.id]: true }))
+    setCardFeedback(prev => ({ ...prev, [card.id]: status }))
+
+    try {
+      await fetch('/api/feedback', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          card,
+          feedback: status,
+          assistant_type: activeMode,
+          query_text: messages[messageIndex - 1]?.content || '', // mensaje del usuario
+        })
+      })
+    } catch (err) {
+      console.error('Error enviando feedback:', err)
+    } finally {
+      setFeedbackSending(prev => ({ ...prev, [card.id]: false }))
+    }
+  }
+
   async function handleSend() {
     if (!input.trim() || loading) return
     const userMessage = input.trim()
@@ -271,16 +334,20 @@ export default function AsistentePage() {
       const contentType = response.headers.get('Content-Type') || ''
 
       if (contentType.includes('text/event-stream')) {
-        // STREAMING (endpoint fiscal v3.2)
+        // STREAMING SSE
         // Añadir mensaje vacío del asistente que iremos llenando
         setMessages(prev => [...prev, { role: 'assistant', content: '' }])
-        setLoading(false) // Quitar "Analizando consulta..." porque ya se ve el texto llegando
+        setLoading(false)
 
         const reader = response.body?.getReader()
         if (!reader) throw new Error('No se pudo leer el stream')
 
         const decoder = new TextDecoder()
         let buffer = ''
+        // El índice del mensaje del asistente que estamos construyendo
+        // será messages.length + 1 (user + assistant que acabamos de añadir)
+        // pero como usamos setMessages, necesitamos calcularlo al vuelo
+        let assistantMessageIndex = -1
 
         while (true) {
           const { done, value } = await reader.read()
@@ -290,26 +357,47 @@ export default function AsistentePage() {
 
           // Procesar líneas SSE completas del buffer
           const lines = buffer.split('\n\n')
-          // La última parte puede estar incompleta, la guardamos en el buffer
           buffer = lines.pop() || ''
 
           for (const line of lines) {
             if (!line.startsWith('data: ')) continue
-            const jsonStr = line.slice(6) // quitar "data: "
+            const jsonStr = line.slice(6)
             try {
               const event = JSON.parse(jsonStr)
+              
               if (event.type === 'text') {
-                // Añadir texto al último mensaje del asistente
                 setMessages(prev => {
                   const updated = [...prev]
                   const lastMsg = updated[updated.length - 1]
                   if (lastMsg && lastMsg.role === 'assistant') {
+                    assistantMessageIndex = updated.length - 1
                     updated[updated.length - 1] = {
                       ...lastMsg,
                       content: lastMsg.content + event.text
                     }
                   }
                   return updated
+                })
+              } else if (event.type === 'investigation_card' && event.card) {
+                // Ficha de investigación estructurada
+                setMessages(prev => {
+                  assistantMessageIndex = prev.length - 1
+                  return prev
+                })
+                setInvestigationCards(prev => {
+                  const idx = assistantMessageIndex >= 0 ? assistantMessageIndex : 0
+                  const existing = prev[idx] || []
+                  return { ...prev, [idx]: [...existing, event.card] }
+                })
+              } else if (event.type === 'verification' && event.results) {
+                // Resultados de verificación de citas
+                setMessages(prev => {
+                  assistantMessageIndex = prev.length - 1
+                  return prev
+                })
+                setVerificationResults(prev => {
+                  const idx = assistantMessageIndex >= 0 ? assistantMessageIndex : 0
+                  return { ...prev, [idx]: event.results }
                 })
               } else if (event.type === 'error') {
                 setMessages(prev => {
@@ -332,7 +420,7 @@ export default function AsistentePage() {
         }
 
       } else {
-        // JSON (endpoint PT u otros — comportamiento original)
+        // JSON (fallback — comportamiento original)
         const data = await response.json()
         setMessages(prev => [...prev, { role: 'assistant', content: data.response }])
       }
@@ -463,8 +551,9 @@ export default function AsistentePage() {
         )}
 
         {messages.map((msg, i) => {
-          const citations = msg.role === 'assistant' ? extractCitations(msg.content) : []
-          const hasCitations = citations.length > 0
+          const msgCards = investigationCards[i] || []
+          const msgVerification = verificationResults[i] || []
+          const hasPanel = msgCards.length > 0 || msgVerification.length > 0
           const isExpanded = expandedCitations === i
 
           return (
@@ -564,13 +653,13 @@ export default function AsistentePage() {
                       ),
                     }}
                   >
-                    {fixTableMarkdown(msg.content)}
+                    {fixTableMarkdown(cleanCardMarkers(msg.content))}
                   </ReactMarkdown>
                   </div>
 
-                  {/* BOTONES: Copiar + Verificar citas */}
+                  {/* BOTONES: Panel unificado + Copiar */}
                   <div style={{ marginTop: 8, display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-                    {hasCitations && (
+                    {hasPanel && (
                       <button
                         onClick={() => setExpandedCitations(isExpanded ? null : i)}
                         style={{
@@ -583,11 +672,11 @@ export default function AsistentePage() {
                           letterSpacing: 0.5
                         }}
                       >
-                        {isExpanded ? 'Ocultar citas' : `🔍 Verificar citas (${citations.length})`}
+                        {isExpanded ? 'Ocultar panel' : `🔍 Panel de verificación (${msgCards.length + msgVerification.length})`}
                       </button>
                     )}
                     <button
-                      onClick={() => handleCopy(msg.content, i)}
+                      onClick={() => handleCopy(cleanCardMarkers(msg.content), i)}
                       style={{
                         background: copiedIndex === i ? '#368087' : '#f0f4f8',
                         color: copiedIndex === i ? 'white' : '#368087',
@@ -601,56 +690,221 @@ export default function AsistentePage() {
                     </button>
                   </div>
 
-                  {/* PANEL DE VERIFICACIÓN DE CITAS */}
-                  {isExpanded && hasCitations && (
+                  {/* PANEL UNIFICADO DE VERIFICACIÓN + FICHAS DE INVESTIGACIÓN */}
+                  {isExpanded && hasPanel && (
                     <div style={{
-                      marginTop: 8, padding: 12, borderRadius: 8,
-                      background: '#f8fafb', border: '1px solid #e8f0f7'
+                      marginTop: 8, padding: 16, borderRadius: 10,
+                      background: '#f8fafb', border: '1px solid #e0eaf0'
                     }}>
-                      <div style={{ fontSize: 12, fontWeight: 700, color: '#264b6e', marginBottom: 8 }}>
-                        Verificar resoluciones citadas:
-                      </div>
-                      {citations.map((cite, ci) => {
-                        const links = getCitationLinks(cite)
-                        return (
-                          <div key={ci} style={{
-                            display: 'flex', alignItems: 'center', gap: 8,
-                            padding: '6px 0',
-                            borderBottom: ci < citations.length - 1 ? '1px solid #e8f0f7' : 'none'
-                          }}>
-                            <span style={{ fontSize: 13, fontWeight: 700, color: '#264b6e', minWidth: 130 }}>
-                              {cite}
-                            </span>
-                            <a
-                              href={links.dyctea}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              style={{
-                                fontSize: 11, fontWeight: 700, color: 'white',
-                                background: '#368087', borderRadius: 4,
-                                padding: '3px 10px', textDecoration: 'none',
-                                transition: 'opacity 0.2s'
-                              }}
-                            >
-                              DYCTEA
-                            </a>
-                            <a
-                              href={links.google}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              style={{
-                                fontSize: 11, fontWeight: 700, color: '#368087',
-                                background: 'white', border: '1px solid #368087',
-                                borderRadius: 4, padding: '3px 10px',
-                                textDecoration: 'none', transition: 'opacity 0.2s'
-                              }}
-                            >
-                              Buscar en Google
-                            </a>
+                      {/* Sección 1: Fichas de investigación */}
+                      {msgCards.length > 0 && (
+                        <>
+                          <div style={{ fontSize: 12, fontWeight: 700, color: '#264b6e', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <span>🔍</span> Fichas de investigación ({msgCards.length})
                           </div>
-                        )
-                      })}
-                      <div style={{ fontSize: 10, color: '#8bafc8', marginTop: 8, lineHeight: 1.4 }}>
+                          <div style={{ fontSize: 10, color: '#8bafc8', marginBottom: 12, lineHeight: 1.4, fontStyle: 'italic' }}>
+                            Resultados de búsqueda web. Deben verificarse en fuente primaria antes de usarlas en escritos.
+                          </div>
+
+                          {msgCards.map((card) => {
+                            const fb = cardFeedback[card.id]
+                            const sending = feedbackSending[card.id]
+                            return (
+                              <div key={card.id} style={{
+                                marginBottom: 12, padding: 12, borderRadius: 8,
+                                background: card.verified ? '#eef9f0' : 'white',
+                                border: card.verified ? '1px solid #a8e6b0' : '1px solid #e0eaf0',
+                              }}>
+                                {/* Cabecera de la ficha */}
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                                  <span style={{
+                                    fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 4,
+                                    background: card.verified ? '#368087' : '#f7c52c',
+                                    color: card.verified ? 'white' : '#5a4a00',
+                                  }}>
+                                    {card.source}
+                                  </span>
+                                  <span style={{ fontSize: 13, fontWeight: 700, color: '#264b6e' }}>
+                                    {card.title}
+                                  </span>
+                                  {card.verified && (
+                                    <span style={{ fontSize: 10, color: '#368087', fontWeight: 700 }}>✅ VERIFICADA</span>
+                                  )}
+                                  {!card.verified && (
+                                    <span style={{ fontSize: 10, color: '#c64133', fontWeight: 700 }}>⚠️ NO VERIFICADA</span>
+                                  )}
+                                </div>
+
+                                {/* Número de resolución */}
+                                {card.resolution_number && (
+                                  <div style={{ fontSize: 11, color: '#5a7a8a', marginBottom: 4 }}>
+                                    <strong style={{ color: '#264b6e' }}>Ref:</strong> {card.resolution_number}
+                                    {card.date && <> · {card.date}</>}
+                                  </div>
+                                )}
+
+                                {/* Criterio */}
+                                <div style={{ fontSize: 12, color: '#1a2a3a', marginBottom: 6, lineHeight: 1.5 }}>
+                                  <strong style={{ color: '#264b6e' }}>Criterio:</strong> {card.criterion}
+                                </div>
+
+                                {/* Relevancia */}
+                                <div style={{ fontSize: 11, color: '#5a7a8a', marginBottom: 6, lineHeight: 1.4 }}>
+                                  <strong style={{ color: '#368087' }}>Relevancia:</strong> {card.relevance}
+                                </div>
+
+                                {/* Aplicabilidad */}
+                                <div style={{ fontSize: 10, color: '#8bafc8', marginBottom: 8 }}>
+                                  {card.applicability}
+                                </div>
+
+                                {/* Enlace de verificación + Botones de feedback */}
+                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+                                  {/* Enlace */}
+                                  <div style={{ display: 'flex', gap: 6 }}>
+                                    {card.verification_url && (
+                                      <a
+                                        href={card.verification_url}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        style={{
+                                          fontSize: 10, fontWeight: 700, color: 'white',
+                                          background: '#368087', borderRadius: 4,
+                                          padding: '3px 10px', textDecoration: 'none',
+                                        }}
+                                      >
+                                        🔗 Verificar fuente
+                                      </a>
+                                    )}
+                                    {card.resolution_number && (
+                                      <a
+                                        href={getCitationLinks(card.resolution_number).google}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        style={{
+                                          fontSize: 10, fontWeight: 700, color: '#368087',
+                                          background: 'white', border: '1px solid #368087',
+                                          borderRadius: 4, padding: '3px 10px',
+                                          textDecoration: 'none',
+                                        }}
+                                      >
+                                        Buscar en Google
+                                      </a>
+                                    )}
+                                  </div>
+
+                                  {/* Botones de feedback */}
+                                  <div style={{ display: 'flex', gap: 4 }}>
+                                    <button
+                                      onClick={() => handleFeedback(card, 'useful', i)}
+                                      disabled={!!fb || sending}
+                                      style={{
+                                        fontSize: 10, fontWeight: 700, cursor: fb || sending ? 'default' : 'pointer',
+                                        padding: '3px 8px', borderRadius: 4, border: 'none',
+                                        background: fb === 'useful' ? '#368087' : '#eef3f7',
+                                        color: fb === 'useful' ? 'white' : '#5a7a8a',
+                                        opacity: fb && fb !== 'useful' ? 0.4 : 1,
+                                        transition: 'all 0.2s',
+                                      }}
+                                    >
+                                      ✅ Útil
+                                    </button>
+                                    <button
+                                      onClick={() => handleFeedback(card, 'not_relevant', i)}
+                                      disabled={!!fb || sending}
+                                      style={{
+                                        fontSize: 10, fontWeight: 700, cursor: fb || sending ? 'default' : 'pointer',
+                                        padding: '3px 8px', borderRadius: 4, border: 'none',
+                                        background: fb === 'not_relevant' ? '#c64133' : '#eef3f7',
+                                        color: fb === 'not_relevant' ? 'white' : '#5a7a8a',
+                                        opacity: fb && fb !== 'not_relevant' ? 0.4 : 1,
+                                        transition: 'all 0.2s',
+                                      }}
+                                    >
+                                      ❌ No relevante
+                                    </button>
+                                    <button
+                                      onClick={() => handleFeedback(card, 'verified', i)}
+                                      disabled={!!fb || sending}
+                                      style={{
+                                        fontSize: 10, fontWeight: 700, cursor: fb || sending ? 'default' : 'pointer',
+                                        padding: '3px 8px', borderRadius: 4, border: 'none',
+                                        background: fb === 'verified' ? '#f7c52c' : '#eef3f7',
+                                        color: fb === 'verified' ? '#5a4a00' : '#5a7a8a',
+                                        opacity: fb && fb !== 'verified' ? 0.4 : 1,
+                                        transition: 'all 0.2s',
+                                      }}
+                                    >
+                                      📥 Verificada
+                                    </button>
+                                  </div>
+                                </div>
+                              </div>
+                            )
+                          })}
+                        </>
+                      )}
+
+                      {/* Separador si hay ambas secciones */}
+                      {msgCards.length > 0 && msgVerification.length > 0 && (
+                        <div style={{ borderTop: '1px solid #e0eaf0', margin: '12px 0' }} />
+                      )}
+
+                      {/* Sección 2: Verificación de citas del texto */}
+                      {msgVerification.length > 0 && (
+                        <>
+                          <div style={{ fontSize: 12, fontWeight: 700, color: '#264b6e', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <span>📋</span> Verificación de citas ({msgVerification.length})
+                          </div>
+                          {msgVerification.map((v, vi) => {
+                            const links = getCitationLinks(v.number)
+                            return (
+                              <div key={vi} style={{
+                                display: 'flex', alignItems: 'center', gap: 8,
+                                padding: '6px 0',
+                                borderBottom: vi < msgVerification.length - 1 ? '1px solid #e8f0f7' : 'none'
+                              }}>
+                                <span style={{ fontSize: 13, fontWeight: 700, color: '#264b6e', minWidth: 130 }}>
+                                  {v.verified && v.status === 'VERIFICADA' ? '✅' : '⚠️'} {v.number}
+                                </span>
+                                <span style={{
+                                  fontSize: 10, fontWeight: 700,
+                                  color: v.verified && v.status === 'VERIFICADA' ? '#368087' : '#c64133',
+                                }}>
+                                  {v.verified && v.status === 'VERIFICADA' ? 'VERIFICADA' : 'NO VERIFICADA'}
+                                </span>
+                                <a
+                                  href={links.dyctea}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  style={{
+                                    fontSize: 10, fontWeight: 700, color: 'white',
+                                    background: '#368087', borderRadius: 4,
+                                    padding: '3px 10px', textDecoration: 'none',
+                                  }}
+                                >
+                                  DYCTEA
+                                </a>
+                                <a
+                                  href={links.google}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  style={{
+                                    fontSize: 10, fontWeight: 700, color: '#368087',
+                                    background: 'white', border: '1px solid #368087',
+                                    borderRadius: 4, padding: '3px 10px',
+                                    textDecoration: 'none',
+                                  }}
+                                >
+                                  Google
+                                </a>
+                              </div>
+                            )
+                          })}
+                        </>
+                      )}
+
+                      <div style={{ fontSize: 10, color: '#8bafc8', marginTop: 10, lineHeight: 1.4 }}>
                         Verifica siempre las resoluciones en fuentes oficiales antes de incluirlas en escritos formales.
                       </div>
                     </div>
